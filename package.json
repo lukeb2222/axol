@@ -8,6 +8,10 @@
     "dev": "npm run dev --prefix server & npm run dev --prefix web; wait",
     "build": "npm run build --prefix web",
     "start": "npm run start --prefix server",
-    "test": "npm test --prefix server"
+    "test": "npm test --prefix server",
+    "build:all": "npm run install:all && npm run build --prefix web"
+  },
+  "engines": {
+    "node": ">=22.13"
   }
 }
