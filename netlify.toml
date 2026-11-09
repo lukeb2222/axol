@@ -1,0 +1,10 @@
+# Netlify hosts the web app. The API runs elsewhere (see README "Deploy").
+# Set API_ORIGIN in Netlify's environment variables to your backend URL,
+# e.g. https://axol-production.up.railway.app (no trailing slash).
+[build]
+  base = "web"
+  command = "npm run build:netlify"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"

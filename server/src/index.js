@@ -8,6 +8,7 @@ import { sourceStatus } from "./sources/index.js";
 
 const app = express();
 app.disable("x-powered-by");
+app.set("trust proxy", 1);
 app.use(express.json({ limit: "256kb" }));
 
 app.use("/api/auth", authRouter);

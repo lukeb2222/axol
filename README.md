@@ -71,6 +71,20 @@ POST /api/import                { text | urls[] }   # paste Shorts / TikTok / Re
 npm test     # engagement scoring, ranker ordering, avoid-list filtering, heuristic profiling
 ```
 
+## Deploy (Netlify + Railway)
+
+Netlify serves the web app; the Express/SQLite server runs on Railway with a persistent volume.
+
+1. **Railway**: New Project → Deploy from GitHub → this repo. Settings → Root Directory `server`.
+   Variables: `ANTHROPIC_API_KEY`, `YOUTUBE_API_KEY`, `AXOL_DB_PATH=/data/axol.sqlite`.
+   Add a Volume mounted at `/data`. Generate a public domain; note the URL.
+2. **Netlify**: Add new site → Import from GitHub → this repo. `netlify.toml` sets the build.
+   Environment variable: `API_ORIGIN=https://<your-railway-domain>`. Deploy.
+
+The build writes `_redirects` so `/api/*` on your Netlify domain proxies to Railway and the SPA
+falls back to `index.html`. One-host alternative: skip Netlify, run `npm run build` and let the
+server serve `web/dist` (it does so automatically when the folder exists).
+
 ## Notes
 
 - Playback uses each platform's official embed player (YouTube IFrame API, TikTok embed v2,
