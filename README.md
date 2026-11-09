@@ -1,0 +1,79 @@
+# axol
+
+A short-video feed (Shorts / TikTok / Reels style) where **every clip is chosen by AI for one person**.
+You tell axol what you love in plain language. It builds an interest profile, pulls short-form video
+from YouTube Shorts, TikTok and Instagram Reels, and then rewrites that profile continuously from
+how long you actually watch each clip.
+
+```
+web/     React + Vite — vertical snap feed, players, onboarding, taste profile
+server/  Node 22 + Express + SQLite (built-in) — auth, sources, learner, ranker, Claude integration
+docs/    ALGORITHM.md (how the engine works) · INVESTOR_BRIEF.md (the pitch)
+```
+
+## Run it
+
+Requires Node 22.13+ (uses the built-in `node:sqlite`).
+
+```bash
+cp .env.example .env        # add keys (see below); the app runs without any
+npm run install:all
+npm run dev                 # server :3000 + web :5173 (proxied)
+```
+
+Open http://localhost:5173. Production: `npm run build && npm start` serves everything on :3000.
+
+### Keys
+
+| Key | What it unlocks | Without it |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Claude reads your intro, tags clips, and re-synthesizes your taste every ~12 clips | Keyword heuristics do the same job, less subtly |
+| `YOUTUBE_API_KEY` | Automated Shorts discovery via the official Data API (free quota) | Clips arrive only from pasted links or a provider |
+| `AXOL_DISCOVERY_PROVIDER_URL` | Automated TikTok / Reels discovery through a licensed provider | Paste TikTok / Reels links in the app; they're tagged and ranked like everything else |
+
+TikTok and Instagram expose embed players publicly but no third-party search API, so discovery on those
+platforms goes through a provider hook (`server/src/sources/provider.js`) you are licensed to use, or
+user-imported links. YouTube's official Data API covers Shorts search directly.
+
+## What happens when you use it
+
+1. **Sign up, write your intro.** Free text plus optional tags. Claude (structured output, zod schema)
+   returns weighted interests, adjacent interests to explore, explicit dislikes, and 6–10 discovery
+   queries per platform.
+2. **Discovery runs.** Each query hits its source adapter; new clips are upserted and tagged by Claude
+   (topic + format + vibe tags with relevance scores).
+3. **The feed ranks.** Each unseen clip is scored: interest match + exploration bonus (UCB) + freshness
+   + platform affinity + noise, then assembled with a diversity penalty and one deliberate "wild card".
+4. **You watch.** The client reports real playback time (YouTube IFrame API) or dwell time (embeds)
+   every 2s, plus likes, loops, shares, hides, and quick skips.
+5. **It learns.** When a card leaves the screen the server computes an engagement score and nudges every
+   tag on that clip, with a soft ceiling and global decay. The UI shows what it just learned.
+6. **It re-thinks.** Every 12 clips, Claude re-reads the recent history and the weights, rewrites your
+   taste summary, adjusts weights, adds exploratory interests, and issues new discovery queries.
+
+Full details in [`docs/ALGORITHM.md`](docs/ALGORITHM.md).
+
+## API (all JSON)
+
+```
+POST /api/auth/signup | login | logout     GET /api/auth/me
+GET  /api/health
+POST /api/onboarding            { text, chips[] }
+GET  /api/feed?n=8              -> { items[{ impressionId, reason, embedKind, externalId, ... }] }
+POST /api/events                { impressionId, type: progress|like|unlike|share|hide|skip|finish, watchedMs, durationMs, replays }
+GET  /api/profile               POST /api/profile/refresh     POST /api/profile/interest { tag, action: boost|mute|remove }
+POST /api/import                { text | urls[] }   # paste Shorts / TikTok / Reels links
+```
+
+## Tests
+
+```bash
+npm test     # engagement scoring, ranker ordering, avoid-list filtering, heuristic profiling
+```
+
+## Notes
+
+- Playback uses each platform's official embed player (YouTube IFrame API, TikTok embed v2,
+  Instagram `/embed`). No video files are downloaded or rehosted.
+- The interest model is per user and fully inspectable on the profile screen; any interest can be
+  boosted, muted, or removed, and dislikes from onboarding are hard filters.
