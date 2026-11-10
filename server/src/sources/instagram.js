@@ -8,6 +8,7 @@ const URL_RE = /instagram\.com\/(?:[\w.]+\/)?(reel|reels|p)\/([A-Za-z0-9_-]+)/;
 export const instagram = {
   name: "instagram",
   mode: () => "embed",
+  canDiscover: () => !!config.discoveryProviderUrl,
 
   async search(query, opts) {
     const rows = await providerSearch("instagram", query, opts);

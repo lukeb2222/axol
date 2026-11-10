@@ -102,6 +102,19 @@ CREATE TABLE IF NOT EXISTS discovery_queries (
   items_found INTEGER NOT NULL DEFAULT 0,
   UNIQUE (user_id, source, query)
 );
+CREATE TABLE IF NOT EXISTS query_runs (
+  source TEXT NOT NULL,
+  query_norm TEXT NOT NULL,
+  last_run_at INTEGER NOT NULL,
+  items_found INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (source, query_norm)
+);
+CREATE TABLE IF NOT EXISTS quota_ledger (
+  source TEXT NOT NULL,
+  day TEXT NOT NULL,                -- YYYY-MM-DD in UTC (YouTube resets at midnight Pacific; we stay conservative)
+  units INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (source, day)
+);
 CREATE TABLE IF NOT EXISTS synth_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

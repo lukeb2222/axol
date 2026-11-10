@@ -1,6 +1,7 @@
 // TikTok adapter. Playback uses TikTok's public embed player (no key needed).
 // Discovery requires a provider (see provider.js) or user-imported URLs, because
 // TikTok does not offer a public search API to third-party apps.
+import { config } from "../config.js";
 import { providerSearch } from "./provider.js";
 
 const URL_RE = /tiktok\.com\/@([\w.-]+)\/video\/(\d+)/;
@@ -8,6 +9,7 @@ const URL_RE = /tiktok\.com\/@([\w.-]+)\/video\/(\d+)/;
 export const tiktok = {
   name: "tiktok",
   mode: () => "embed",
+  canDiscover: () => !!config.discoveryProviderUrl,
 
   async search(query, opts) {
     const rows = await providerSearch("tiktok", query, opts);

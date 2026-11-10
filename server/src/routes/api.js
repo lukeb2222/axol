@@ -8,6 +8,8 @@ import { runDiscovery, upsertVideos, tagPending, saveQueries } from "../ingest.j
 import { learnFromImpression, safeTags } from "../learner.js";
 import { itemFromUrl, sourceStatus, SOURCES } from "../sources/index.js";
 import { aiStatus } from "../ai/claude.js";
+import { youtubeUnitsUsed } from "../sources/youtube.js";
+import { discoveryState } from "../ingest.js";
 
 export const apiRouter = Router();
 
@@ -20,6 +22,8 @@ apiRouter.get("/health", (_req, res) => {
     discoveryProvider: !!config.discoveryProviderUrl,
     // True when at least one automated discovery path exists; otherwise the feed is fed by pasted links.
     discoveryReady: !!config.youtubeApiKey || !!config.discoveryProviderUrl,
+    youtubeQuota: config.youtubeApiKey ? { used: youtubeUnitsUsed(), budget: config.youtubeDailyUnits } : null,
+    ...discoveryState(),
   });
 });
 
@@ -47,7 +51,7 @@ apiRouter.get("/feed", async (req, res) => {
   let candidates = unseenCandidates(userId);
   if (candidates.length < config.ranking.minPool) {
     // Pool is thin: discover synchronously (bounded) so the feed never runs dry.
-    await Promise.race([runDiscovery(userId, { limit: 8, staleMs: 0 }), sleep(12000)]);
+    await Promise.race([runDiscovery(userId, { limit: 3, staleMs: 0 }), sleep(12000)]);
     candidates = unseenCandidates(userId);
   }
   const model = loadUserModel(userId);

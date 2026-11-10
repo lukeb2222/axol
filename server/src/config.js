@@ -2,7 +2,17 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import fs from "node:fs";
+
 const here = path.dirname(fileURLToPath(import.meta.url));
+
+// Load server/keys.env (KEY=value lines) without overriding real environment variables.
+try {
+  for (const line of fs.readFileSync(path.join(here, "..", "keys.env"), "utf8").split("\n")) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+    if (m && !m[2].startsWith("#") && !process.env[m[1]]) process.env[m[1]] = m[2];
+  }
+} catch {}
 
 export const config = {
   port: Number(process.env.PORT || 3000),
@@ -15,6 +25,10 @@ export const config = {
 
   // Content sources
   youtubeApiKey: process.env.YOUTUBE_API_KEY || "",
+  // Daily YouTube Data API budget in quota units (Google's free tier is 10,000/day; search = 100, list = 1).
+  youtubeDailyUnits: Number(process.env.YOUTUBE_DAILY_UNITS || 9000),
+  // Pre-fill the catalog on boot so new users never see an empty feed. Set AXOL_WARMUP=0 to disable.
+  warmup: process.env.AXOL_WARMUP !== "0",
   // Optional JSON endpoint that returns [{ "url": "https://www.tiktok.com/@x/video/123" }, ...]
   // for a query. Receives ?q=<query>&source=tiktok|instagram. Lets you plug in a licensed
   // discovery provider without changing app code.
@@ -39,5 +53,6 @@ export const config = {
     diversityPenalty: 0.3,
     noise: 0.08,
     minPool: 12,         // trigger discovery when unseen pool is smaller than this
+    queryCacheMs: 24 * 3600e3, // a query run by anyone within this window is not re-run for someone else
   },
 };

@@ -3,3 +3,4 @@ server/data/*.sqlite*
 web/dist/
 .env
 .DS_Store
+server/keys.env

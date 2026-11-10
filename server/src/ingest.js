@@ -2,6 +2,12 @@
 import { db, q, uid, now, transaction } from "./db.js";
 import { SOURCES } from "./sources/index.js";
 import { tagVideos } from "./ai/tagger.js";
+import { config } from "./config.js";
+import { TAXONOMY } from "./ai/taxonomy.js";
+
+const normQuery = (s) => String(s).toLowerCase().replace(/\s+/g, " ").trim();
+let quotaExhaustedUntil = 0;
+export const discoveryState = () => ({ quotaPausedUntil: quotaExhaustedUntil || null });
 
 const inflight = new Map(); // userId -> Promise, so a scroll burst triggers one run
 
@@ -62,21 +68,35 @@ export async function tagPending(ids) {
 export function runDiscovery(userId, { limit = 6, staleMs = 6 * 3600e3 } = {}) {
   if (inflight.has(userId)) return inflight.get(userId);
   const p = (async () => {
+    // Only sources that can actually search count toward the limit; the rest are parked.
+    const active = Object.values(SOURCES).filter((s) => s.canDiscover()).map((s) => s.name);
+    if (!active.length) return 0;
     const rows = q.all(
-      `SELECT id, source, query FROM discovery_queries WHERE user_id = ? AND (last_run_at IS NULL OR last_run_at < ?)
-       ORDER BY last_run_at IS NOT NULL, created_at DESC LIMIT ?`,
-      userId, now() - staleMs, limit,
+      `SELECT id, source, query FROM discovery_queries WHERE user_id = ? AND source IN (${active.map(() => "?").join(",")})
+         AND (last_run_at IS NULL OR last_run_at < ?)
+       ORDER BY last_run_at IS NOT NULL, CASE source WHEN 'youtube' THEN 0 ELSE 1 END, created_at DESC LIMIT ?`,
+      userId, ...active, now() - staleMs, limit,
     );
     let added = 0;
     for (const r of rows) {
+      // Shared cache: if anyone ran this query recently, the catalog already has its results.
+      const key = normQuery(r.query);
+      const cached = q.get("SELECT last_run_at, items_found FROM query_runs WHERE source = ? AND query_norm = ?", r.source, key);
+      if (cached && now() - cached.last_run_at < config.ranking.queryCacheMs) {
+        q.run("UPDATE discovery_queries SET last_run_at = ?, items_found = ? WHERE id = ?", now(), cached.items_found, r.id);
+        continue;
+      }
+      if (r.source === "youtube" && now() < quotaExhaustedUntil) continue;
       try {
         let items = await SOURCES[r.source].search(r.query, { max: 12 });
         if (SOURCES[r.source].enrich) items = await Promise.all(items.map((i) => SOURCES[r.source].enrich(i)));
         const fresh = upsertVideos(items);
         added += fresh.length;
         q.run("UPDATE discovery_queries SET last_run_at = ?, items_found = items_found + ? WHERE id = ?", now(), items.length, r.id);
+        q.run("INSERT INTO query_runs (source, query_norm, last_run_at, items_found) VALUES (?, ?, ?, ?) ON CONFLICT(source, query_norm) DO UPDATE SET last_run_at = excluded.last_run_at, items_found = excluded.items_found", r.source, key, now(), items.length);
         await tagPending(fresh);
       } catch (e) {
+        if (e.quota) { quotaExhaustedUntil = now() + 3600e3; console.warn("[ingest]", e.message); break; }
         console.warn(`[ingest] ${r.source} "${r.query}": ${e.message}`);
         q.run("UPDATE discovery_queries SET last_run_at = ? WHERE id = ?", now(), r.id);
       }
@@ -85,4 +105,56 @@ export function runDiscovery(userId, { limit = 6, staleMs = 6 * 3600e3 } = {}) {
   })().finally(() => inflight.delete(userId));
   inflight.set(userId, p);
   return p;
+}
+
+/**
+ * Pre-fill the shared catalog so a brand-new user never sees an empty feed.
+ * Cheap first (trending per category, 1 unit each), then a bounded number of topic searches.
+ * Safe to call on every boot: cached queries are skipped, and it stops at the daily budget.
+ */
+const YT_CATEGORIES = [
+  [17, "sports"], [10, "music"], [23, "comedy"], [20, "gaming"], [15, "animals"], [24, "entertainment"],
+  [26, "life-hacks"], [28, "science"], [19, "travel"], [2, "cars"], [1, "movies"], [22, "pov-storytelling"], [27, "education"],
+];
+export async function warmupCatalog({ maxSearches = 20 } = {}) {
+  const yt = SOURCES.youtube;
+  if (!yt.trending || yt.mode() !== "api") return 0;
+  let added = 0;
+  for (const [id, label] of YT_CATEGORIES) {
+    const key = `trending:${label}`;
+    const cached = q.get("SELECT last_run_at FROM query_runs WHERE source = 'youtube' AND query_norm = ?", key);
+    if (cached && now() - cached.last_run_at < 6 * 3600e3) continue;
+    try {
+      const items = await yt.trending(id, label);
+      const fresh = upsertVideos(items);
+      added += fresh.length;
+      q.run("INSERT INTO query_runs (source, query_norm, last_run_at, items_found) VALUES ('youtube', ?, ?, ?) ON CONFLICT(source, query_norm) DO UPDATE SET last_run_at = excluded.last_run_at, items_found = excluded.items_found", key, now(), items.length);
+      await tagPending(fresh);
+    } catch (e) {
+      if (e.quota) { quotaExhaustedUntil = now() + 3600e3; console.warn("[warmup]", e.message); return added; }
+      console.warn(`[warmup] trending ${label}: ${e.message}`);
+    }
+  }
+  // Topic searches: rotate through the taxonomy, skipping anything searched in the last day.
+  let searches = 0;
+  const topics = Object.keys(TAXONOMY).sort(() => Math.random() - 0.5);
+  for (const topic of topics) {
+    if (searches >= maxSearches) break;
+    const query = `${topic.replace(/-/g, " ")} shorts`;
+    const key = normQuery(query);
+    const cached = q.get("SELECT last_run_at FROM query_runs WHERE source = 'youtube' AND query_norm = ?", key);
+    if (cached && now() - cached.last_run_at < config.ranking.queryCacheMs) continue;
+    try {
+      const items = await yt.search(query, { max: 25 });
+      searches++;
+      const fresh = upsertVideos(items);
+      added += fresh.length;
+      q.run("INSERT INTO query_runs (source, query_norm, last_run_at, items_found) VALUES ('youtube', ?, ?, ?) ON CONFLICT(source, query_norm) DO UPDATE SET last_run_at = excluded.last_run_at, items_found = excluded.items_found", key, now(), items.length);
+      await tagPending(fresh);
+    } catch (e) {
+      if (e.quota) { quotaExhaustedUntil = now() + 3600e3; console.warn("[warmup]", e.message); break; }
+      console.warn(`[warmup] "${query}": ${e.message}`);
+    }
+  }
+  return added;
 }

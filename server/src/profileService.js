@@ -24,7 +24,7 @@ export async function onboard(userId, { text, chips }) {
   });
   saveQueries(userId, p.queries);
   // Kick off discovery; the first feed request awaits it if the pool is empty.
-  runDiscovery(userId, { limit: 10 }).catch((e) => console.warn("[discovery]", e.message));
+  runDiscovery(userId, { limit: 5 }).catch((e) => console.warn("[discovery]", e.message));
   return getProfile(userId);
 }
 
@@ -86,6 +86,6 @@ export async function maybeResynthesize(userId, { force = false } = {}) {
       .run(userId, res.insight, JSON.stringify({ adjustments: res.adjustments, newInterests: res.newInterests }), res.mode, now());
   });
   saveQueries(userId, res.queries);
-  runDiscovery(userId, { limit: 6, staleMs: 0 }).catch((e) => console.warn("[discovery]", e.message));
+  runDiscovery(userId, { limit: 4, staleMs: 0 }).catch((e) => console.warn("[discovery]", e.message));
   return { insight: res.insight, summary: res.summary, mode: res.mode, adjustments: res.adjustments, newInterests: res.newInterests };
 }
