@@ -43,6 +43,10 @@ function normalize(v, query) {
   };
 }
 const isShort = (v) => v.duration_ms > 0 && v.duration_ms <= 3 * 60 * 1000;
+// Only clips the owner allows to be embedded, that are public, and that are not age-restricted
+// (those refuse to play inside another site).
+const playable = (v) => v.status?.embeddable !== false && (v.status?.privacyStatus || "public") === "public" && !v.contentDetails?.contentRating?.ytRating;
+const PARTS = "snippet,contentDetails,status";
 
 export const youtube = {
   name: "youtube",
@@ -60,8 +64,8 @@ export const youtube = {
     }, UNITS.search);
     const ids = (data.items || []).map((i) => i.id?.videoId).filter(Boolean);
     if (!ids.length) return [];
-    const details = await yt("videos", { part: "snippet,contentDetails", id: ids.join(",") }, UNITS.list);
-    return (details.items || []).map((v) => normalize(v, query)).filter(isShort);
+    const details = await yt("videos", { part: PARTS, id: ids.join(",") }, UNITS.list);
+    return (details.items || []).filter(playable).map((v) => normalize(v, query)).filter(isShort);
   },
 
   /**
@@ -70,8 +74,8 @@ export const youtube = {
    */
   async trending(categoryId, label, { region = "US" } = {}) {
     if (!config.youtubeApiKey) return [];
-    const data = await yt("videos", { part: "snippet,contentDetails", chart: "mostPopular", regionCode: region, videoCategoryId: String(categoryId), maxResults: "50" }, UNITS.list);
-    return (data.items || []).map((v) => normalize(v, label)).filter(isShort);
+    const data = await yt("videos", { part: PARTS, chart: "mostPopular", regionCode: region, videoCategoryId: String(categoryId), maxResults: "50" }, UNITS.list);
+    return (data.items || []).filter(playable).map((v) => normalize(v, label)).filter(isShort);
   },
 
   /** Build an item from a pasted URL (watch, shorts, youtu.be). */

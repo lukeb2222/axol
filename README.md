@@ -63,6 +63,18 @@ YouTube's official Data API covers Shorts search directly.
 
 Full details in [`docs/ALGORITHM.md`](docs/ALGORITHM.md).
 
+## The app
+
+Four tabs: **Reels** (the personal feed), **Search** (any topic, across the shared catalog plus live
+discovery on all three platforms), **Dashboard** (watch time, what holds your attention, platform
+split, liked clips), and **You** (the taste profile and its controls).
+
+The reel player uses native snap scrolling on touch and an eased one-clip glide for wheel and
+keyboard. The next clip is buffered before you reach it, a poster covers each player until its first
+frame, and every platform renders into the same full-bleed 9:16 frame: YouTube through the IFrame
+API, TikTok through its controllable embed player (`tiktok.com/player/v1`), and Instagram through its
+post embed, oversized and offset so the video inside the card fills the frame.
+
 ## API (all JSON)
 
 ```
@@ -70,9 +82,11 @@ POST /api/auth/signup | login | logout     GET /api/auth/me
 GET  /api/health
 POST /api/onboarding            { text, chips[] }
 GET  /api/feed?n=8              -> { items[{ impressionId, reason, embedKind, externalId, ... }] }
-POST /api/events                { impressionId, type: progress|like|unlike|share|hide|skip|finish, watchedMs, durationMs, replays }
+POST /api/events                { impressionId, type: progress|like|unlike|share|hide|skip|finish|broken, watchedMs, durationMs, replays }
 GET  /api/profile               POST /api/profile/refresh     POST /api/profile/interest { tag, action: boost|mute|remove }
 POST /api/import                { text | urls[] }   # paste Shorts / TikTok / Reels links
+GET  /api/search?q=&offset=     -> ranked catalog matches; a new query also starts live discovery
+GET  /api/search/suggest        GET /api/dashboard?tz=<minutes east of UTC>
 ```
 
 ## Tests

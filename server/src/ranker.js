@@ -111,9 +111,10 @@ export function rankBatch(candidates, model, size = R.batchSize, opts = {}) {
 export function unseenCandidates(userId, limit = 400) {
   return q.all(
     `SELECT v.* FROM videos v
-     WHERE v.tagged = 1 AND v.id NOT IN (SELECT video_id FROM impressions WHERE user_id = ?)
+     WHERE v.tagged = 1 AND v.id NOT IN (
+       SELECT video_id FROM impressions WHERE user_id = ? AND (finalized = 1 OR watched_ms > 0 OR served_at > ?))
      ORDER BY v.created_at DESC LIMIT ?`,
-    userId, limit,
+    userId, Date.now() - 30 * 60e3, limit,
   );
 }
 

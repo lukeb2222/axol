@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../lib/api.js";
-import { X, Refresh } from "../components/Icons.jsx";
+import { Refresh } from "../components/Icons.jsx";
 
-export default function Profile({ user, onClose, onLogout }) {
+export default function Profile({ user, onLogout }) {
   const [p, setP] = useState(null);
   const [busy, setBusy] = useState("");
   const [links, setLinks] = useState("");
@@ -22,16 +22,16 @@ export default function Profile({ user, onClose, onLogout }) {
     try { const d = await api.importLinks({ text: links }); setMsg(`Added ${d.added} of ${d.total} links to your catalog.`); setLinks(""); } catch (e) { setMsg(e.message); } finally { setBusy(""); }
   };
 
-  if (!p) return <div className="sheet"><div className="loading-slide"><div className="orb" /></div></div>;
+  if (!p) return <div className="page"><div className="shell"><div className="skeleton tall"><div className="shimmer" /></div></div></div>;
   const maxW = Math.max(0.01, ...p.interests.map((i) => Math.abs(i.weight)));
   const hours = p.stats.watched_ms / 3600e3;
 
   return (
-    <div className="sheet">
-      <div className="shell">
-        <div className="row between">
-          <div className="brand" style={{ fontSize: 24 }}><span className="dot" />your taste</div>
-          <button className="pill" onClick={onClose}><X /></button>
+    <div className="page">
+      <div className="shell fade-in">
+        <div>
+          <h1>{user.name || "You"}</h1>
+          <p className="muted" style={{ margin: "6px 0 0" }}>Your taste profile. Everything the feed believes about you, and the controls to correct it.</p>
         </div>
 
         <div className="card" style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.25), var(--bg-2))" }}>

@@ -26,6 +26,9 @@ export const api = {
   refresh: () => call("POST", "/profile/refresh"),
   interest: (b) => call("POST", "/profile/interest", b),
   importLinks: (b) => call("POST", "/import", b),
+  dashboard: () => call("GET", `/dashboard?tz=${-new Date().getTimezoneOffset()}`),
+  search: (q, { offset = 0, n = 18, refresh = false } = {}) => call("GET", `/search?q=${encodeURIComponent(q)}&offset=${offset}&n=${n}${refresh ? "&refresh=1" : ""}`),
+  suggest: () => call("GET", "/search/suggest"),
 };
 
 /** Fire-and-forget event that survives page unload. */

@@ -10,6 +10,7 @@ import { itemFromUrl, sourceStatus, SOURCES } from "../sources/index.js";
 import { aiStatus } from "../ai/claude.js";
 import { youtubeUnitsUsed } from "../sources/youtube.js";
 import { discoveryState } from "../ingest.js";
+import { insightsRouter } from "./insights.js";
 import { apifyEnabled, apifyRunsToday } from "../sources/apify.js";
 
 export const apiRouter = Router();
@@ -102,6 +103,15 @@ apiRouter.post("/events", async (req, res) => {
     case "share":
       q.run("UPDATE impressions SET shared = 1, updated_at = ? WHERE id = ?", now(), imp.id);
       return res.json({ ok: true });
+    case "broken":
+      // The player could not play this clip. Close the impression at a neutral score: an
+      // unplayable clip says nothing about the viewer's taste, and they will not be served it
+      // again. Only a definitive platform verdict (removed, private, embedding disabled) retires
+      // it for everyone (tagged = 2 keeps it out of every feed and search); a vague player error
+      // can be one person's network or blocker.
+      if (b.definitive === true) q.run("UPDATE videos SET tagged = 2 WHERE id = ?", imp.video_id);
+      q.run("UPDATE impressions SET finalized = 1, score = 0, updated_at = ? WHERE id = ?", now(), imp.id);
+      return res.json({ ok: true });
     case "hide":
       q.run("UPDATE impressions SET hidden = 1, updated_at = ? WHERE id = ?", now(), imp.id);
       break; // fall through to learning below
@@ -127,6 +137,8 @@ apiRouter.post("/events", async (req, res) => {
   }
   res.json({ ok: true, learned: { score: round(learned.score), deltas: learned.deltas.slice(0, 4).map((d) => ({ ...d, delta: round(d.delta), weight: round(d.weight) })) }, synth });
 });
+
+apiRouter.use(insightsRouter);
 
 /* ------------------------------------ profile ----------------------------------- */
 

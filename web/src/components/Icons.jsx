@@ -14,3 +14,9 @@ export const Sparkle = (p) => <svg {...P(p)} fill="currentColor" stroke="none"><
 export const ChevronUp = (p) => <svg {...P(p)}><path d="m18 15-6-6-6 6" /></svg>;
 export const X = (p) => <svg {...P(p)}><path d="M18 6 6 18M6 6l12 12" /></svg>;
 export const Refresh = (p) => <svg {...P(p)}><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6" /></svg>;
+export const Reels = (p) => <svg {...P(p)}><rect x="5" y="2.5" width="14" height="19" rx="3" /><path d="M10.5 9v6l5-3z" fill="currentColor" stroke="none" /></svg>;
+export const Search = (p) => <svg {...P(p)}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.8-3.8" /></svg>;
+export const Chart = (p) => <svg {...P(p)}><path d="M5 20V11M12 20V4M19 20v-6" /></svg>;
+export const User = (p) => <svg {...P(p)}><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>;
+export const Back = (p) => <svg {...P(p)}><path d="m15 18-6-6 6-6" /></svg>;
+export const Flame = (p) => <svg {...P(p)} fill="currentColor" stroke="none"><path d="M12 2c1 4 5 5.5 5 10.5A5 5 0 0 1 7 12.5c0-1.6.6-2.8 1.5-3.8.3 1.3 1 2 2 2.3C10 8 10.500 5 12 2z" /></svg>;

@@ -167,3 +167,56 @@ export async function warmupCatalog({ maxSearches = 20 } = {}) {
   }
   return added;
 }
+
+/**
+ * Discover one topic on every platform that can search, sharing the 24h query cache.
+ * Resolves as soon as the fast lane (YouTube) is done or `waitMs` passes; slower provider
+ * lanes keep running and land in the catalog on their own. Returns { started, pending }.
+ */
+const topicInflight = new Map();
+export function discoverTopic(topic, { waitMs = 6000 } = {}) {
+  const base = normQuery(topic);
+  const plan = { youtube: `${base} shorts`, tiktok: base, instagram: base };
+  const lanes = [];
+  for (const s of Object.values(SOURCES)) {
+    if (!s.canDiscover()) continue;
+    const query = plan[s.name];
+    const key = normQuery(query);
+    const cached = q.get("SELECT last_run_at FROM query_runs WHERE source = ? AND query_norm = ?", s.name, key);
+    if (cached && now() - cached.last_run_at < config.ranking.queryCacheMs) continue;
+    if (now() < (pausedUntil[s.name] || 0)) continue;
+    const id = `${s.name}:${key}`;
+    if (!topicInflight.has(id)) {
+      const p = (async () => {
+        try {
+          let items = await s.search(query, { max: 15 });
+          if (s.enrich) items = await Promise.all(items.map((i) => (i.title ? i : s.enrich(i))));
+          const fresh = upsertVideos(items);
+          q.run("INSERT INTO query_runs (source, query_norm, last_run_at, items_found) VALUES (?, ?, ?, ?) ON CONFLICT(source, query_norm) DO UPDATE SET last_run_at = excluded.last_run_at, items_found = excluded.items_found", s.name, key, now(), items.length);
+          await tagPending(fresh);
+          return fresh.length;
+        } catch (e) {
+          if (e.quota) { pausedUntil[s.name] = now() + 3600e3; if (s.name === "youtube") quotaExhaustedUntil = pausedUntil[s.name]; }
+          console.warn(`[search] ${s.name} "${query}": ${e.message}`);
+          return 0;
+        }
+      })().finally(() => topicInflight.delete(id));
+      topicInflight.set(id, p);
+    }
+    lanes.push({ name: s.name, promise: topicInflight.get(id) });
+  }
+  const fast = lanes.filter((l) => l.name === "youtube").map((l) => l.promise);
+  const wait = Promise.race([Promise.allSettled(fast.length ? fast : lanes.map((l) => l.promise)), new Promise((r) => setTimeout(r, waitMs))]);
+  return wait.then(() => ({ started: lanes.length, ...topicStatus(topic) }));
+}
+
+/** Which platforms are still fetching this topic, and which are paused by a spent budget. */
+export function topicStatus(topic) {
+  const base = normQuery(topic);
+  const plan = { youtube: `${base} shorts`, tiktok: base, instagram: base };
+  const names = Object.values(SOURCES).filter((s) => s.canDiscover()).map((s) => s.name);
+  return {
+    pending: names.filter((n) => topicInflight.has(`${n}:${normQuery(plan[n])}`)),
+    paused: names.filter((n) => now() < (pausedUntil[n] || 0)),
+  };
+}

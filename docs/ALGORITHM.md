@@ -152,7 +152,20 @@ the skateboarding interest is really about *filmmaking*, or that a stated intere
 every time. Fallback re-synthesis compares each tag's mean completion to the user's average and
 nudges accordingly.
 
-## 9. Safeguards and controls
+## 9. Search as a signal (`server/src/routes/insights.js`)
+
+A search is the most explicit statement of interest a viewer can make, so it feeds the same model:
+the searched topic is added as an interest at weight 0.8 (or nudged +0.3 if already present, origin
+`search`), saved as discovery queries on all three platforms, and run live if nobody has searched it
+in the last 24 hours. Results are ranked by tag, query and title matches (every word must match for
+full credit), with a small bonus for the viewer's own interest fit and a penalty for repeating a
+creator. Watching a search result is an ordinary impression and trains the profile like any other.
+
+Clips a platform refuses to play are closed at a neutral score, so they never count as a skip. A
+definitive verdict from the platform (removed, private, embedding disabled) retires the clip for
+everyone.
+
+## 10. Safeguards and controls
 
 - `avoid` tags are hard filters at ranking time; users can mute, boost, or remove any interest.
 - Weights saturate softly and decay globally, so no single interest can permanently dominate.
