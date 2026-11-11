@@ -5,7 +5,8 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { config } from "../config.js";
 
 let client = null;
-let disabledReason = config.aiDisabled ? "AXOL_DISABLE_AI=1" : null;
+const hasCredentials = !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_PROFILE || process.env.ANTHROPIC_FEDERATION_RULE_ID);
+let disabledReason = config.aiDisabled ? "AXOL_DISABLE_AI=1" : hasCredentials ? null : "no Anthropic credentials set (ANTHROPIC_API_KEY)";
 
 function getClient() {
   if (disabledReason) return null;
