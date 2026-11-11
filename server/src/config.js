@@ -35,6 +35,8 @@ export const config = {
   discoveryProviderUrl: process.env.AXOL_DISCOVERY_PROVIDER_URL || "",
   discoveryProviderToken: process.env.AXOL_DISCOVERY_PROVIDER_TOKEN || "",
   instagramOembedToken: process.env.IG_OEMBED_TOKEN || "",
+  // Apify token enables automated TikTok and Instagram discovery (see sources/apify.js).
+  apifyToken: process.env.APIFY_TOKEN || "",
 
   // Learning hyper-parameters
   learning: {

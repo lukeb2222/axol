@@ -3,20 +3,27 @@
 // TikTok does not offer a public search API to third-party apps.
 import { config } from "../config.js";
 import { providerSearch } from "./provider.js";
+import { apifyEnabled, tiktokSearch } from "./apify.js";
 
 const URL_RE = /tiktok\.com\/@([\w.-]+)\/video\/(\d+)/;
 
 export const tiktok = {
   name: "tiktok",
-  mode: () => "embed",
-  canDiscover: () => !!config.discoveryProviderUrl,
+  mode: () => (apifyEnabled() ? "apify" : config.discoveryProviderUrl ? "provider" : "links-only"),
+  canDiscover: () => apifyEnabled() || !!config.discoveryProviderUrl,
 
   async search(query, opts) {
-    const rows = await providerSearch("tiktok", query, opts);
+    const rows = apifyEnabled() ? await tiktokSearch(query, opts) : await providerSearch("tiktok", query, opts);
     const items = [];
     for (const r of rows) {
       const it = tiktok.fromUrl(r.url);
-      if (it) items.push({ ...it, title: r.title || it.title, creator: r.creator || it.creator, query });
+      if (!it) continue;
+      items.push({
+        ...it, query,
+        title: r.title || it.title, creator: r.creator || it.creator, thumbnail: r.thumbnail || it.thumbnail,
+        duration_ms: r.duration_ms || it.duration_ms,
+        description: (r.hashtags || []).map((h) => `#${h}`).join(" "),
+      });
     }
     return items;
   },

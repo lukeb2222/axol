@@ -2,20 +2,27 @@
 // Discovery requires a provider (see provider.js) or user-imported URLs.
 import { config } from "../config.js";
 import { providerSearch } from "./provider.js";
+import { apifyEnabled, instagramSearch } from "./apify.js";
 
 const URL_RE = /instagram\.com\/(?:[\w.]+\/)?(reel|reels|p)\/([A-Za-z0-9_-]+)/;
 
 export const instagram = {
   name: "instagram",
-  mode: () => "embed",
-  canDiscover: () => !!config.discoveryProviderUrl,
+  mode: () => (apifyEnabled() ? "apify" : config.discoveryProviderUrl ? "provider" : "links-only"),
+  canDiscover: () => apifyEnabled() || !!config.discoveryProviderUrl,
 
   async search(query, opts) {
-    const rows = await providerSearch("instagram", query, opts);
+    const rows = apifyEnabled() ? await instagramSearch(query, opts) : await providerSearch("instagram", query, opts);
     const items = [];
     for (const r of rows) {
       const it = instagram.fromUrl(r.url);
-      if (it) items.push({ ...it, title: r.title || it.title, creator: r.creator || it.creator, query });
+      if (!it) continue;
+      items.push({
+        ...it, query,
+        title: r.title || it.title, creator: r.creator || it.creator, thumbnail: r.thumbnail || it.thumbnail,
+        duration_ms: r.duration_ms || it.duration_ms,
+        description: (r.hashtags || []).map((h) => `#${h}`).join(" "),
+      });
     }
     return items;
   },
