@@ -8,7 +8,8 @@ import { q, now } from "../db.js";
 const API = "https://www.googleapis.com/youtube/v3";
 const UNITS = { search: 100, list: 1 };
 
-function today() { return new Date().toISOString().slice(0, 10); }
+// Google resets YouTube API quota at midnight Pacific time, so the ledger's day follows that clock.
+function today() { return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date()); }
 export function youtubeUnitsUsed() { return q.get("SELECT units FROM quota_ledger WHERE source = 'youtube' AND day = ?", today())?.units || 0; }
 function spend(units) {
   if (youtubeUnitsUsed() + units > config.youtubeDailyUnits) throw new QuotaError();
