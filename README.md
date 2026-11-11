@@ -31,6 +31,11 @@ Open http://localhost:5173. Production: `npm run build && npm start` serves ever
 | `YOUTUBE_API_KEY` | Automated Shorts discovery via the official Data API (free quota) | Clips arrive only from pasted links or a provider |
 | `AXOL_DISCOVERY_PROVIDER_URL` | Automated TikTok / Reels discovery through a licensed provider | Paste TikTok / Reels links in the app; they're tagged and ranked like everything else |
 
+One YouTube key serves every user: queries are cached across users for 24 hours, the catalog is
+pre-filled on boot (cheap trending calls plus a bounded set of topic searches), and a daily quota
+budget pauses discovery gracefully instead of failing. For more than a handful of new users per day,
+request a quota increase from Google (YouTube API Services quota extension form).
+
 TikTok and Instagram expose embed players publicly but no third-party search API, so discovery on those
 platforms goes through a provider hook (`server/src/sources/provider.js`) you are licensed to use, or
 user-imported links. YouTube's official Data API covers Shorts search directly.
