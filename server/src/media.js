@@ -29,7 +29,10 @@ export function cacheMedia(video) {
     const name = `${video.source}-${video.external_id.replace(/[^A-Za-z0-9_-]/g, "")}.mp4`;
     const tmp = fileFor(`${name}.part`);
     try {
-      const res = await fetch(video.media_src, { signal: AbortSignal.timeout(60e3), headers: { "user-agent": "Mozilla/5.0 (axol media cache)" } });
+      const headers = { "user-agent": "Mozilla/5.0 (axol media cache)" };
+      // Files Apify stored for us are private to the account: fetch them with its token.
+      if (config.apifyToken && new URL(video.media_src).hostname === "api.apify.com") headers.authorization = `Bearer ${config.apifyToken}`;
+      const res = await fetch(video.media_src, { signal: AbortSignal.timeout(60e3), headers });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       const type = res.headers.get("content-type") || "";
       if (!/video|octet-stream/.test(type)) throw new Error(`unexpected content-type ${type}`);
@@ -102,4 +105,11 @@ export async function serveMedia(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.type("video/mp4");
   res.sendFile(fileFor(name), { acceptRanges: true });
+}
+
+/** Fetch files that are known but not on disk yet (a restart mid-download, an earlier failure). */
+export async function cachePending({ limit = 60 } = {}) {
+  if (!mediaEnabled()) return 0;
+  const ids = q.all("SELECT id FROM videos WHERE media_src != '' AND media_file = '' AND media_fails < 3 AND tagged = 1 ORDER BY created_at DESC LIMIT ?", limit).map((r) => r.id);
+  return cacheMany(ids);
 }

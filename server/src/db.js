@@ -135,6 +135,9 @@ for (const [name, ddl] of [
   ["media_fails", "INTEGER NOT NULL DEFAULT 0"],
 ]) if (!videoCols.has(name)) db.exec(`ALTER TABLE videos ADD COLUMN ${name} ${ddl}`);
 
+// One-time repair: early downloads failed for lack of credentials, not because the files are bad.
+db.exec("UPDATE videos SET media_fails = 0 WHERE media_file = '' AND media_src LIKE 'https://api.apify.com/%' AND media_fails > 0");
+
 export const now = () => Date.now();
 export const uid = () => crypto.randomUUID();
 
