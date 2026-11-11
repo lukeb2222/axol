@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import YouTubePlayer from "./YouTubePlayer.jsx";
 import TikTokPlayer from "./TikTokPlayer.jsx";
 import EmbedPlayer from "./EmbedPlayer.jsx";
+import NativePlayer from "./NativePlayer.jsx";
 import Poster from "./Poster.jsx";
 import { posterCandidates } from "../lib/posters.js";
 import { beacon } from "../lib/api.js";
@@ -11,15 +12,18 @@ const ASSUMED_EMBED_MS = 20000; // typical short clip when the platform hides du
 const PROGRESS_EVERY_MS = 2000;
 const LABEL = { youtube: "Shorts", tiktok: "TikTok", instagram: "Reels" };
 
-export default function VideoCard({ item, active, near, prewarm, soundOn, needsGesture, paused, next, onFinished, onHide, onWantSound, onSoundBlocked, onBroken, onAlive, showHint }) {
-  const kind = item.embedKind;
+export default function VideoCard({ item, active, near, prewarm, warm, soundOn, needsGesture, paused, next, onFinished, onHide, onWantSound, onSoundBlocked, onBroken, onAlive, showHint }) {
+  // axol's own player whenever the server holds the file; the platform's embed otherwise.
+  const [nativeFailed, setNativeFailed] = useState(false);
+  const kind = item.videoUrl && !nativeFailed ? "native" : item.embedKind;
   const [liked, setLiked] = useState(false);
   const [bursts, setBursts] = useState([]);
   const [userPaused, setUserPaused] = useState(false);
   const [progress, setProgress] = useState(0);
   const [showInfo, setShowInfo] = useState(false);
   const [playing, setPlaying] = useState(false);         // first frame is on screen → poster fades out
-  const [controllable, setControllable] = useState(kind === "youtube"); // we can pause/mute it ourselves
+  const [embedControllable, setControllable] = useState(false); // TikTok's player, once it answers
+  const controllable = kind === "native" || kind === "youtube" || embedControllable;
   // Where the browser only allows sound after a tap (iOS Safari), each clip starts muted and
   // a tap on it grants sound for that clip.
   const [granted, setGranted] = useState(false);
@@ -30,6 +34,8 @@ export default function VideoCard({ item, active, near, prewarm, soundOn, needsG
   const acc = useRef({ watchedMs: 0, durationMs: item.durationMs || 0, replays: 0, lastTick: 0, lastSent: 0, finalized: false, activatedAt: 0, clock: false, lastTime: 0 });
   const tapRef = useRef({ last: 0, timer: null });
   const playerRef = useRef(null);
+  const videoRef = useRef(null);
+  const onReplay = useCallback(() => { acc.current.replays += 1; }, []);
 
   const sendProgress = useCallback((force = false) => {
     const a = acc.current;
@@ -56,7 +62,7 @@ export default function VideoCard({ item, active, near, prewarm, soundOn, needsG
 
   // No player clock (Instagram, TikTok fallback): dwell time while active and visible.
   useEffect(() => {
-    if (kind === "youtube" || !active || paused) return;
+    if (kind === "youtube" || kind === "native" || !active || paused) return;
     let last = Date.now();
     const t = setInterval(() => {
       const a = acc.current;
@@ -141,6 +147,8 @@ export default function VideoCard({ item, active, near, prewarm, soundOn, needsG
       setGranted(true);
       if (neverChoseSound) onWantSound?.();
       try { playerRef.current?.unMute?.(); playerRef.current?.setVolume?.(100); playerRef.current?.playVideo?.(); } catch {}
+      // Unmuting inside the tap itself is what satisfies the browser's gesture rule.
+      try { if (videoRef.current) { videoRef.current.muted = false; videoRef.current.play().catch(() => {}); } } catch {}
       tapRef.current.last = 0;
       return;
     }
@@ -160,7 +168,7 @@ export default function VideoCard({ item, active, near, prewarm, soundOn, needsG
   // YouTube players are cheap to keep on both sides of the viewer. TikTok and Instagram players
   // load a whole page each and those platforms rate-limit, so they mount only for the clip on
   // screen and the one about to arrive.
-  const render = kind === "youtube" ? active || near : active || prewarm;
+  const render = kind === "youtube" || kind === "native" ? active || near || warm : active || prewarm;
   const bg = posterCandidates(item)[0];
   const isPaused = paused || userPaused;
 
@@ -168,8 +176,13 @@ export default function VideoCard({ item, active, near, prewarm, soundOn, needsG
     <section className={`slide ${active ? "is-active" : ""} ${playing ? "is-playing" : ""}`} data-impression={item.impressionId}>
       {bg && <div className="bgblur" style={{ backgroundImage: `url(${bg})` }} />}
       <div className="stage">
+        {render && kind === "native" && (
+          <NativePlayer item={item} active={active} warm={prewarm || warm} paused={isPaused} soundOn={playerSound} poster={bg}
+            onTick={onTick} onPlaying={onPlaying} onReplay={onReplay} onSoundBlocked={onSoundBlocked}
+            onFailed={() => setNativeFailed(true)} videoRef={videoRef} />
+        )}
         {render && kind === "youtube" && (
-          <YouTubePlayer item={item} active={active} paused={isPaused} prewarm={prewarm} soundOn={playerSound}
+          <YouTubePlayer item={item} active={active} paused={isPaused} prewarm={prewarm || warm} soundOn={playerSound}
             onTick={onTick} onEnded={onEnded} onPlaying={onPlaying} onSoundBlocked={onSoundBlocked} onBroken={markBroken} playerRef={playerRef} />
         )}
         {render && kind === "tiktok" && (

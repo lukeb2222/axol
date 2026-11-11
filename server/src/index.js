@@ -5,7 +5,7 @@ import { authRouter } from "./routes/auth.js";
 import { apiRouter } from "./routes/api.js";
 import { aiStatus } from "./ai/claude.js";
 import { sourceStatus } from "./sources/index.js";
-import { warmupCatalog } from "./ingest.js";
+import { warmupCatalog, backfillTikTokFiles } from "./ingest.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -32,7 +32,8 @@ app.listen(config.port, () => {
   console.log(`  ai: ${ai.enabled ? `on (${ai.model})` : `off — heuristics (${ai.reason || "no credentials"})`}`);
   console.log(`  sources: ${JSON.stringify(sourceStatus())}`);
   if (config.warmup) {
-    const run = () => warmupCatalog().then((n) => n && console.log(`[warmup] added ${n} clips`)).catch((e) => console.warn("[warmup]", e.message));
+    const run = () => warmupCatalog().then((n) => n && console.log(`[warmup] added ${n} clips`)).catch((e) => console.warn("[warmup]", e.message))
+      .then(() => backfillTikTokFiles()).then((n) => n && console.log(`[backfill] stored ${n} TikTok files`));
     setTimeout(run, 2000);
     setInterval(run, 6 * 3600e3).unref();
   }

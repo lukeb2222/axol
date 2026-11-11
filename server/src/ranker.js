@@ -66,8 +66,10 @@ export function scoreVideo(video, model, { rand = Math.random } = {}) {
   const freshness = Math.exp(-ageDays / 14) * R.freshnessWeight;
   const sourceBonus = 0.3 * (model.sourceAff.get(video.source) || 0);
   const noise = gumbel(rand) * R.noise;
+  // A clip axol holds the file for starts instantly and always plays; an embed may not.
+  const instant = video.media_file ? R.instantBonus : 0;
   const explanation = topReason(tags, model);
-  return { total: match + explore + freshness + sourceBonus + noise, match, explore, explanation };
+  return { total: match + explore + freshness + sourceBonus + noise + instant, match, explore, explanation };
 }
 
 /** Pick a batch with greedy diversity: penalize repeating the same tags/creators. */

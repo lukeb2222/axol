@@ -59,7 +59,9 @@ export async function runActor(actor, input, { timeoutSec = 120, memory = 1024, 
 export async function tiktokSearch(query, { max = 12 } = {}) {
   const items = await runActor("clockworks~tiktok-scraper", {
     searchQueries: [query], searchSection: "/video", resultsPerPage: Math.min(30, max), proxyCountryCode: "None",
-  }, { limit: max });
+    // Apify stores each video file in a named key-value store (named stores are kept, not expired).
+    ...(config.apifyDownloadTikTok ? { shouldDownloadVideos: true, videoKvStoreIdOrName: config.apifyVideoStore } : {}),
+  }, { limit: max, timeoutSec: 180 });
   return items
     .filter((v) => v.webVideoUrl && !v.isSlideshow)
     .map((v) => ({
@@ -69,6 +71,7 @@ export async function tiktokSearch(query, { max = 12 } = {}) {
       thumbnail: v.videoMeta?.coverUrl || "",
       duration_ms: Math.round((v.videoMeta?.duration || 0) * 1000),
       hashtags: (v.hashtags || []).map((h) => (typeof h === "object" ? h.name : h)).filter(Boolean),
+      media_src: (v.mediaUrls || []).find((u) => /^https:\/\/api\.apify\.com\/.+\.mp4/.test(u)) || "",
     }))
     .filter((v) => v.duration_ms === 0 || v.duration_ms <= 3 * 60e3);
 }
@@ -82,6 +85,8 @@ const normalizeReel = (p) => ({
   thumbnail: p.displayUrl || "",
   duration_ms: Math.round((p.videoDuration || 0) * 1000),
   hashtags: p.hashtags || [],
+  // A short-lived link to the reel's file; it is downloaded straight after discovery.
+  media_src: typeof p.videoUrl === "string" && p.videoUrl.startsWith("https://") ? p.videoUrl : "",
 });
 const isReel = (p) => p.type === "Video" || p.productType === "clips" || !!p.videoUrl || !!p.videoDuration;
 
@@ -106,4 +111,17 @@ export async function instagramSearch(query, { max = 12 } = {}) {
     }
   }
   return [];
+}
+
+/** Fetch downloadable files for TikTok clips already in the catalog. Returns Map(postId -> file URL). */
+export async function tiktokFiles(urls) {
+  const items = await runActor("clockworks~tiktok-scraper", {
+    postURLs: urls, resultsPerPage: 1, proxyCountryCode: "None", shouldDownloadVideos: true, videoKvStoreIdOrName: config.apifyVideoStore,
+  }, { limit: urls.length, timeoutSec: 240 });
+  const out = new Map();
+  for (const v of items) {
+    const file = (v.mediaUrls || []).find((u) => /^https:\/\/api\.apify\.com\/.+\.mp4/.test(u));
+    if (v.id && file) out.set(String(v.id), file);
+  }
+  return out;
 }

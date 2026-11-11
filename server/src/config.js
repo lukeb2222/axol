@@ -18,6 +18,12 @@ export const config = {
   port: Number(process.env.PORT || 3000),
   dbPath: process.env.AXOL_DB_PATH || path.join(here, "..", "data", "axol.sqlite"),
   webDist: path.join(here, "..", "..", "web", "dist"),
+  // Downloaded clip files live next to the database (so on the persistent volume in production).
+  // AXOL_MEDIA_MAX_MB caps the disk they may use; least recently watched files are dropped first.
+  mediaDir: process.env.AXOL_MEDIA_DIR || (process.env.AXOL_DB_PATH === ":memory:" ? "" : path.join(path.dirname(process.env.AXOL_DB_PATH || path.join(here, "..", "data", "axol.sqlite")), "media")),
+  mediaMaxMb: Number(process.env.AXOL_MEDIA_MAX_MB ?? 350),
+  // Where browsers reach this server directly (media is served from here, not through the web host).
+  publicOrigin: (process.env.AXOL_PUBLIC_ORIGIN || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : "")).replace(/\/$/, ""),
 
   // AI (Anthropic). When no credentials resolve, heuristics are used instead.
   model: process.env.AXOL_MODEL || "claude-opus-5-5",
@@ -45,6 +51,9 @@ export const config = {
   apifyToken: process.env.APIFY_TOKEN || "",
   // Runs per day across TikTok + Instagram. 10/day is roughly $4-5/month, inside Apify's free credit.
   apifyDailyRuns: Number(process.env.APIFY_DAILY_RUNS || 10),
+  // Have Apify download TikTok video files so they play in axol's own player. Set to 0 to embed only.
+  apifyDownloadTikTok: process.env.APIFY_DOWNLOAD_TIKTOK !== "0",
+  apifyVideoStore: process.env.APIFY_VIDEO_STORE || "axol-tiktok-videos",
   apifyMaxUsdPerRun: Number(process.env.APIFY_MAX_USD_PER_RUN || 0.5),
 
   // Learning hyper-parameters
@@ -63,6 +72,7 @@ export const config = {
     freshnessWeight: 0.2,
     diversityPenalty: 0.3,
     noise: 0.08,
+    instantBonus: 0.25,
     minPool: 12,         // trigger discovery when unseen pool is smaller than this
     queryCacheMs: 24 * 3600e3, // a query run by anyone within this window is not re-run for someone else
   },

@@ -6,6 +6,7 @@ import { safeTags, completionOf } from "../learner.js";
 import { loadUserModel, scoreVideo } from "../ranker.js";
 import { discoverTopic, topicStatus, saveQueries } from "../ingest.js";
 import { normalizeTag } from "../ai/taxonomy.js";
+import { publicVideo } from "../videoView.js";
 
 export const insightsRouter = Router();
 
@@ -75,10 +76,10 @@ insightsRouter.get("/dashboard", (req, res) => {
   const skipping = tagStats.filter((t) => t.score < -0.05).sort((a, b) => a.score - b.score).slice(0, 5);
 
   const liked = q.all(
-    `SELECT v.id, v.source, v.external_id, v.url, v.title, v.creator, v.thumbnail, MAX(i.updated_at) AS at
+    `SELECT v.*, MAX(i.updated_at) AS at
      FROM impressions i JOIN videos v ON v.id = i.video_id WHERE i.user_id = ? AND i.liked = 1
      GROUP BY v.id ORDER BY at DESC LIMIT 12`, userId,
-  ).map((v) => ({ id: v.id, source: v.source, externalId: v.external_id, url: v.url, title: v.title, creator: v.creator, thumbnail: v.thumbnail }));
+  ).map(publicVideo);
 
   const interests = q.all("SELECT tag, weight, origin FROM interests WHERE user_id = ? ORDER BY weight DESC", userId);
   const prof = q.get("SELECT synth_count, summary FROM profiles WHERE user_id = ?", userId);
@@ -185,10 +186,7 @@ insightsRouter.get("/search", async (req, res) => {
   const items = transaction(() => page.map(({ v }) => {
     const id = uid();
     ins.run(id, userId, v.id, now(), v.duration_ms, reason, now());
-    return {
-      impressionId: id, reason, id: v.id, source: v.source, externalId: v.external_id, embedKind: v.embed_kind, url: v.url,
-      title: v.title, creator: v.creator, thumbnail: v.thumbnail, durationMs: v.duration_ms, tags: safeTags(v.tags_json).map((t) => t.tag), query: v.query,
-    };
+    return { impressionId: id, reason, ...publicVideo(v) };
   }));
   res.json({ q: raw, items, total: ordered.length, hasMore: offset + n < ordered.length, pending: discovery.pending, paused: discovery.paused });
 });

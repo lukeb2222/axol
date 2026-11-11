@@ -111,7 +111,11 @@ server serve `web/dist` (it does so automatically when the folder exists).
 
 ## Notes
 
-- Playback uses each platform's official embed player (YouTube IFrame API, TikTok embed v2,
-  Instagram `/embed`). No video files are downloaded or rehosted.
+- YouTube plays through the official IFrame API. TikTok clips are downloaded through Apify and
+  Instagram reel files are fetched at discovery time; both are stored in a size-capped cache on the
+  server (`AXOL_MEDIA_MAX_MB`, least recently watched dropped first) and played in axol's own
+  `<video>` player, preloaded two clips ahead. A clip without a stored file falls back to the
+  platform's embed. Storing and serving copies of third-party videos carries copyright and
+  terms-of-service exposure that embedding does not; set `APIFY_DOWNLOAD_TIKTOK=0` to embed only.
 - The interest model is per user and fully inspectable on the profile screen; any interest can be
   boosted, muted, or removed, and dislikes from onboarding are hard filters.

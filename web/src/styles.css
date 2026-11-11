@@ -146,6 +146,7 @@ textarea { min-height: 140px; resize: vertical; line-height: 1.5; }
   .frame, .posterimg { top: 50%; aspect-ratio: auto; width: max(100cqw, 100cqh * 0.5625); height: max(100cqh, 100cqw * 1.77778); transform: translate(-50%, -50%); }
 }
 .frame iframe { width: 100%; height: 100%; border: 0; display: block; transition: opacity 0.3s ease; }
+.frame video { width: 100%; height: 100%; display: block; object-fit: cover; background: #000; }
 /* A player that has not yet proven it loaded is kept invisible: an empty or error page from the
    platform would otherwise show as a solid white block. The poster and backdrop show instead. */
 .frame.wait { background: transparent; }

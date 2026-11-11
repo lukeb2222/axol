@@ -11,6 +11,8 @@ import { aiStatus } from "../ai/claude.js";
 import { youtubeUnitsUsed } from "../sources/youtube.js";
 import { discoveryState } from "../ingest.js";
 import { insightsRouter } from "./insights.js";
+import { publicVideo } from "../videoView.js";
+import { serveMedia, mediaStats } from "../media.js";
 import { apifyEnabled, apifyRunsToday } from "../sources/apify.js";
 
 export const apiRouter = Router();
@@ -27,9 +29,13 @@ apiRouter.get("/health", (_req, res) => {
     discoveryReady: !!config.youtubeApiKey || !!config.discoveryProviderUrl || apifyEnabled(),
     youtubeQuota: config.youtubeApiKey ? { used: youtubeUnitsUsed(), budget: config.youtubeDailyUnits } : null,
     apify: apifyEnabled() ? { runsToday: apifyRunsToday(), dailyBudget: config.apifyDailyRuns } : null,
+    media: mediaStats(),
     ...discoveryState(),
   });
 });
+
+// Clip files are fetched by <video> elements, which cannot send the app's bearer token.
+apiRouter.get("/media/:id", (req, res, next) => serveMedia(req, res).catch(next));
 
 apiRouter.use(requireAuth);
 
@@ -191,13 +197,6 @@ apiRouter.post("/queries", (req, res) => {
 
 /* ----------------------------------- helpers ------------------------------------ */
 
-function publicVideo(v) {
-  return {
-    id: v.id, source: v.source, externalId: v.external_id, embedKind: v.embed_kind, url: v.url,
-    title: v.title, creator: v.creator, thumbnail: v.thumbnail, durationMs: v.duration_ms,
-    tags: safeTags(v.tags_json).map((t) => t.tag), query: v.query,
-  };
-}
 const round = (x) => Math.round(x * 1000) / 1000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

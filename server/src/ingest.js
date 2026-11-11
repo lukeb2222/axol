@@ -2,6 +2,8 @@
 import { db, q, uid, now, transaction } from "./db.js";
 import { SOURCES } from "./sources/index.js";
 import { tagVideos } from "./ai/tagger.js";
+import { cacheMany, mediaEnabled } from "./media.js";
+import { apifyEnabled, tiktokFiles } from "./sources/apify.js";
 import { config } from "./config.js";
 import { TAXONOMY } from "./ai/taxonomy.js";
 
@@ -32,20 +34,25 @@ export function upsertVideos(items) {
   const upd = db.prepare(`UPDATE videos SET title = CASE WHEN title = '' THEN ? ELSE title END,
     creator = CASE WHEN creator = '' THEN ? ELSE creator END, thumbnail = CASE WHEN thumbnail = '' THEN ? ELSE thumbnail END,
     duration_ms = CASE WHEN duration_ms = 0 THEN ? ELSE duration_ms END WHERE id = ?`);
-  const fresh = [];
+  const src = db.prepare("UPDATE videos SET media_src = ?, media_fails = 0 WHERE id = ? AND media_file = ''");
+  const fresh = [], withMedia = [];
   transaction(() => {
     for (const it of items) {
       const row = sel.get(it.source, it.external_id);
+      let id = row?.id;
       if (row) {
         upd.run(it.title, it.creator, it.thumbnail, it.duration_ms, row.id);
         if (!row.tagged) fresh.push(row.id);
-        continue;
+      } else {
+        id = uid();
+        ins.run(id, it.source, it.external_id, it.embed_kind, it.url, it.title, it.creator, it.description, it.thumbnail, it.duration_ms, it.query || "", now());
+        fresh.push(id);
       }
-      const id = uid();
-      ins.run(id, it.source, it.external_id, it.embed_kind, it.url, it.title, it.creator, it.description, it.thumbnail, it.duration_ms, it.query || "", now());
-      fresh.push(id);
+      if (it.media_src) { src.run(it.media_src, id); withMedia.push(id); }
     }
   });
+  // Fetch the files right away (links to them can be short-lived); never blocks discovery.
+  if (withMedia.length) cacheMany(withMedia).catch((e) => console.warn("[media]", e.message));
   return fresh;
 }
 
@@ -219,4 +226,28 @@ export function topicStatus(topic) {
     pending: names.filter((n) => topicInflight.has(`${n}:${normQuery(plan[n])}`)),
     paused: names.filter((n) => now() < (pausedUntil[n] || 0)),
   };
+}
+
+/**
+ * TikTok clips discovered before downloads were switched on have no file. Fetch files for a
+ * batch of them in one provider run so they also play in axol's own player.
+ */
+export async function backfillTikTokFiles({ batch = 25 } = {}) {
+  if (!apifyEnabled() || !config.apifyDownloadTikTok || !mediaEnabled()) return 0;
+  const rows = q.all("SELECT id, external_id, url FROM videos WHERE source = 'tiktok' AND tagged = 1 AND media_src = '' AND media_fails < 3 ORDER BY created_at DESC LIMIT ?", batch);
+  if (rows.length < 3) return 0;
+  try {
+    const files = await tiktokFiles(rows.map((r) => r.url));
+    const set = db.prepare("UPDATE videos SET media_src = ? WHERE id = ?");
+    const miss = db.prepare("UPDATE videos SET media_fails = media_fails + 1 WHERE id = ?");
+    const ids = [];
+    for (const r of rows) {
+      const f = files.get(r.external_id);
+      if (f) { set.run(f, r.id); ids.push(r.id); } else miss.run(r.id);
+    }
+    return await cacheMany(ids);
+  } catch (e) {
+    console.warn("[backfill]", e.message);
+    return 0;
+  }
 }

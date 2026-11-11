@@ -22,6 +22,7 @@ export const tiktok = {
         ...it, query,
         title: r.title || it.title, creator: r.creator || it.creator, thumbnail: r.thumbnail || it.thumbnail,
         duration_ms: r.duration_ms || it.duration_ms,
+        media_src: r.media_src || "",
         description: (r.hashtags || []).map((h) => `#${h}`).join(" "),
       });
     }

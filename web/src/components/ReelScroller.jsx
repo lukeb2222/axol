@@ -44,8 +44,15 @@ export default function ReelScroller({ items, onNeedMore, onRemove, paused, star
     const measure = () => {
       ticking = false;
       if (!root.clientHeight) return; // hidden behind another tab: nothing to measure
-      const idx = Math.min(Math.max(0, live.current.count - 1), Math.round(root.scrollTop / root.clientHeight));
-      if (idx !== live.current.active) {
+      if (glide.current.running) return; // a glide already activated its destination
+      // Hand over to the incoming clip once the swipe is 30% of the way there, so it is already
+      // playing by the time it settles.
+      const pos = root.scrollTop / root.clientHeight, cur = live.current.active;
+      let idx = cur;
+      if (pos >= cur + 0.3) idx = Math.floor(pos + 0.7);
+      else if (pos <= cur - 0.3) idx = Math.ceil(pos - 0.7);
+      idx = Math.min(Math.max(0, live.current.count - 1), Math.max(0, idx));
+      if (idx !== cur) {
         setActive(idx);
         if (idx > 0) { setHint(false); localStorage.setItem("axol_hinted", "1"); }
         try { navigator.vibrate?.(8); } catch {}
@@ -61,9 +68,11 @@ export default function ReelScroller({ items, onNeedMore, onRemove, paused, star
   const goTo = useCallback((idx) => {
     const root = feedRef.current;
     if (!root) return;
-    const target = Math.max(0, Math.min(live.current.count - 1, idx)) * root.clientHeight;
+    const to = Math.max(0, Math.min(live.current.count - 1, idx));
+    const target = to * root.clientHeight;
     const start = root.scrollTop, dist = target - start;
     if (Math.abs(dist) < 2) return;
+    setActive(to); // wheel and keyboard know their destination: start that clip immediately
     const g = glide.current;
     cancelAnimationFrame(g.raf);
     g.running = true;
@@ -174,7 +183,7 @@ export default function ReelScroller({ items, onNeedMore, onRemove, paused, star
       <div className="feed" ref={feedRef}>
         {items.map((item, idx) => (
           <div key={item.impressionId} className="slide-wrap">
-            <VideoCard item={item} active={idx === active && !paused} near={Math.abs(idx - active) === 1} prewarm={idx === active + 1 && !paused}
+            <VideoCard item={item} active={idx === active && !paused} near={Math.abs(idx - active) === 1} prewarm={idx === active + 1 && !paused} warm={idx === active + 2 && !paused}
               soundOn={soundOn} needsGesture={needsGesture} paused={paused} next={items[idx + 1]}
               onFinished={onFinished} onHide={onRemove} onWantSound={wantSound} onSoundBlocked={onSoundBlocked} onBroken={onBroken} onAlive={onAlive} showHint={hint && idx === 0} />
           </div>

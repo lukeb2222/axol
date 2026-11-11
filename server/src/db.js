@@ -125,6 +125,16 @@ CREATE TABLE IF NOT EXISTS synth_log (
 );
 `);
 
+// Columns added after the first release are created on boot if missing.
+const videoCols = new Set(db.prepare("PRAGMA table_info(videos)").all().map((c) => c.name));
+for (const [name, ddl] of [
+  ["media_src", "TEXT NOT NULL DEFAULT ''"],    // remote file URL the clip can be downloaded from
+  ["media_file", "TEXT NOT NULL DEFAULT ''"],   // filename in the local media cache, when present
+  ["media_bytes", "INTEGER NOT NULL DEFAULT 0"],
+  ["media_at", "INTEGER NOT NULL DEFAULT 0"],   // last time it was watched (for eviction)
+  ["media_fails", "INTEGER NOT NULL DEFAULT 0"],
+]) if (!videoCols.has(name)) db.exec(`ALTER TABLE videos ADD COLUMN ${name} ${ddl}`);
+
 export const now = () => Date.now();
 export const uid = () => crypto.randomUUID();
 
