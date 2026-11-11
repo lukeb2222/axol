@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { structured } from "./claude.js";
+import { config } from "../config.js";
 import { TAXONOMY, extractTags, normalizeTag } from "./taxonomy.js";
 
 const SOURCES = ["youtube", "tiktok", "instagram"];
@@ -55,7 +56,7 @@ Keep tags kebab-case and consistent with the existing ones when they refer to th
 
 export async function buildInitialProfile({ text, chips }) {
   const user = `What they wrote about their passions, interests and what they want to see:\n"""${text}"""\n\nTags they picked from a list: ${chips.length ? chips.join(", ") : "(none)"}`;
-  const ai = await structured({ schema: InitialProfileSchema, system: PROFILE_SYSTEM, user, effort: "medium" });
+  const ai = await structured({ schema: InitialProfileSchema, system: PROFILE_SYSTEM, user, effort: "medium", model: config.modelOnboarding });
   if (ai) return { ...clean(ai), mode: "ai" };
   return { ...heuristicInitial(text, chips), mode: "heuristic" };
 }

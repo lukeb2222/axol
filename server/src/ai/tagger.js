@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { structured } from "./claude.js";
+import { config } from "../config.js";
 import { extractTags, normalizeTag } from "./taxonomy.js";
 
 const TagSchema = z.object({
@@ -22,7 +23,7 @@ export async function tagVideos(videos) {
   const user = videos
     .map((v) => `id=${v.id}\nsource=${v.source}\nquery=${v.query}\ntitle=${v.title}\ncreator=${v.creator}\ndescription=${(v.description || "").slice(0, 300)}`)
     .join("\n---\n");
-  const ai = await structured({ schema: TagSchema, system: SYSTEM, user, effort: "low", maxTokens: 12000 });
+  const ai = await structured({ schema: TagSchema, system: SYSTEM, user, effort: "low", maxTokens: 12000, model: config.modelTagger });
   if (ai) {
     for (const it of ai.items) {
       const tags = dedupe(it.tags.map((t) => ({ tag: normalizeTag(t.tag), relevance: t.relevance })));

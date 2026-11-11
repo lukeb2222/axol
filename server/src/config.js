@@ -21,6 +21,12 @@ export const config = {
 
   // AI (Anthropic). When no credentials resolve, heuristics are used instead.
   model: process.env.AXOL_MODEL || "claude-opus-5-5",
+  // Optional per-task overrides (default to AXOL_MODEL). Tagging is high-volume classification.
+  modelTagger: process.env.AXOL_MODEL_TAGGER || process.env.AXOL_MODEL || "claude-opus-5-5",
+  modelOnboarding: process.env.AXOL_MODEL_ONBOARDING || process.env.AXOL_MODEL || "claude-opus-5-5",
+  // Hard monthly ceiling on AI spend, tracked from each response's token usage. When reached,
+  // the app falls back to heuristics until the next calendar month.
+  aiMonthlyUsd: Number(process.env.AXOL_AI_MONTHLY_USD || 10),
   aiDisabled: process.env.AXOL_DISABLE_AI === "1",
 
   // Content sources
