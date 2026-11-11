@@ -26,6 +26,8 @@ export default function ReelScroller({ items, onNeedMore, onRemove, paused, star
   const live = useRef({});
   live.current = { active, paused, count: items.length, items };
   const glide = useRef({ running: false, raf: 0, lockUntil: 0, acc: 0, accTimer: 0 });
+  const health = useRef({});               // consecutive player failures per platform
+  const [tripped, setTripped] = useState({}); // platform -> time until which it is rested
   const watched = useRef(0);
 
   // Start on the requested clip (search results open mid-list).
@@ -120,6 +122,12 @@ export default function ReelScroller({ items, onNeedMore, onRemove, paused, star
     for (let i = 1; i <= 3; i++) if (items[active + i]) preloadPoster(items[active + i]);
   }, [active, items, onNeedMore]);
 
+  useEffect(() => {
+    for (const ahead of [items[active + 1], items[active + 2]]) {
+      if (ahead && tripped[ahead.source] > Date.now()) { onRemove?.(ahead.impressionId); return; }
+    }
+  }, [active, items, tripped, onRemove]);
+
   const pushToast = useCallback((t) => {
     const id = Math.random();
     setToasts((ts) => [...ts.slice(-2), { id, ...t }]);
@@ -142,9 +150,21 @@ export default function ReelScroller({ items, onNeedMore, onRemove, paused, star
 
   // An unplayable clip ahead of the viewer is dropped before they reach it; one they are
   // already on is skipped after a moment so they can see why.
-  const onBroken = useCallback((impressionId) => {
+  // If one platform's player fails three times running (it is rate-limiting or blocked on this
+  // network), stop walking the viewer into its clips for a few minutes instead of skipping each
+  // one in front of them. Those clips stay unwatched, so they come back later.
+  const onAlive = useCallback((source) => { health.current[source] = 0; }, []);
+  const onBroken = useCallback((impressionId, definitive) => {
     const idx = live.current.items.findIndex((i) => i.impressionId === impressionId);
     if (idx < 0) return;
+    const source = live.current.items[idx].source;
+    if (!definitive) {
+      health.current[source] = (health.current[source] || 0) + 1;
+      if (health.current[source] >= 3) {
+        health.current[source] = 0;
+        setTripped((t) => ({ ...t, [source]: Date.now() + 5 * 60e3 }));
+      }
+    }
     if (idx > live.current.active) { onRemove?.(impressionId); return; }
     if (idx === live.current.active) setTimeout(() => { if (live.current.items[live.current.active]?.impressionId === impressionId) goTo(live.current.active + 1); }, 1100);
   }, [goTo, onRemove]);
@@ -156,7 +176,7 @@ export default function ReelScroller({ items, onNeedMore, onRemove, paused, star
           <div key={item.impressionId} className="slide-wrap">
             <VideoCard item={item} active={idx === active && !paused} near={Math.abs(idx - active) === 1} prewarm={idx === active + 1 && !paused}
               soundOn={soundOn} needsGesture={needsGesture} paused={paused} next={items[idx + 1]}
-              onFinished={onFinished} onHide={onRemove} onWantSound={wantSound} onSoundBlocked={onSoundBlocked} onBroken={onBroken} showHint={hint && idx === 0} />
+              onFinished={onFinished} onHide={onRemove} onWantSound={wantSound} onSoundBlocked={onSoundBlocked} onBroken={onBroken} onAlive={onAlive} showHint={hint && idx === 0} />
           </div>
         ))}
         {/* The loading card is deliberately not a snap point: browsers keep following whichever

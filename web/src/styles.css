@@ -145,7 +145,11 @@ textarea { min-height: 140px; resize: vertical; line-height: 1.5; }
 @container (max-aspect-ratio: 3/4) {
   .frame, .posterimg { top: 50%; aspect-ratio: auto; width: max(100cqw, 100cqh * 0.5625); height: max(100cqh, 100cqw * 1.77778); transform: translate(-50%, -50%); }
 }
-.frame iframe { width: 100%; height: 100%; border: 0; display: block; }
+.frame iframe { width: 100%; height: 100%; border: 0; display: block; transition: opacity 0.3s ease; }
+/* A player that has not yet proven it loaded is kept invisible: an empty or error page from the
+   platform would otherwise show as a solid white block. The poster and backdrop show instead. */
+.frame.wait { background: transparent; }
+.frame.wait iframe { opacity: 0; pointer-events: none; }
 /* Instagram's embed is a post card: 54px header, then the video in a 4:5 box. Oversizing the
    iframe to 142.22% (= 16/9 × 4/5) makes a 9:16 reel inside that box exactly fill this frame;
    the header is pushed above it and the footer falls below, both clipped. */

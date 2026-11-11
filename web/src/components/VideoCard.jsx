@@ -11,7 +11,7 @@ const ASSUMED_EMBED_MS = 20000; // typical short clip when the platform hides du
 const PROGRESS_EVERY_MS = 2000;
 const LABEL = { youtube: "Shorts", tiktok: "TikTok", instagram: "Reels" };
 
-export default function VideoCard({ item, active, near, prewarm, soundOn, needsGesture, paused, next, onFinished, onHide, onWantSound, onSoundBlocked, onBroken, showHint }) {
+export default function VideoCard({ item, active, near, prewarm, soundOn, needsGesture, paused, next, onFinished, onHide, onWantSound, onSoundBlocked, onBroken, onAlive, showHint }) {
   const kind = item.embedKind;
   const [liked, setLiked] = useState(false);
   const [bursts, setBursts] = useState([]);
@@ -97,7 +97,7 @@ export default function VideoCard({ item, active, near, prewarm, soundOn, needsG
     acc.current.replays += 1;
     try { playerRef.current?.seekTo(0, true); playerRef.current?.playVideo(); } catch {}
   }, []);
-  const onPlaying = useCallback(() => setPlaying(true), []);
+  const onPlaying = useCallback(() => { setPlaying(true); onAlive?.(item.source); }, [onAlive, item.source]);
 
   // The platform says this clip cannot be played here (removed, private, embedding disabled).
   // It is retired from the catalog without counting as a skip, and the feed moves past it.
@@ -108,7 +108,7 @@ export default function VideoCard({ item, active, near, prewarm, soundOn, needsG
     a.broken = true; a.finalized = true;
     setBroken(true);
     beacon({ impressionId: item.impressionId, type: "broken", definitive: definitive === true });
-    onBroken?.(item.impressionId);
+    onBroken?.(item.impressionId, definitive === true);
   }, [item.impressionId, onBroken]);
 
   const like = useCallback((on = true) => {
@@ -157,7 +157,10 @@ export default function VideoCard({ item, active, near, prewarm, soundOn, needsG
     tapRef.current.timer = setTimeout(() => setUserPaused((p) => !p), 280);
   };
 
-  const render = active || near;
+  // YouTube players are cheap to keep on both sides of the viewer. TikTok and Instagram players
+  // load a whole page each and those platforms rate-limit, so they mount only for the clip on
+  // screen and the one about to arrive.
+  const render = kind === "youtube" ? active || near : active || prewarm;
   const bg = posterCandidates(item)[0];
   const isPaused = paused || userPaused;
 
@@ -172,7 +175,7 @@ export default function VideoCard({ item, active, near, prewarm, soundOn, needsG
         {render && kind === "tiktok" && (
           <TikTokPlayer item={item} active={active} paused={isPaused} soundOn={playerSound} onTick={onTick} onPlaying={onPlaying} onControllable={setControllable} onBroken={markBroken} />
         )}
-        {render && kind === "instagram" && <EmbedPlayer item={item} onLoaded={onPlaying} />}
+        {render && kind === "instagram" && <EmbedPlayer item={item} onLoaded={onPlaying} onBroken={markBroken} />}
         <Poster item={item} />
         {!playing && <div className="shimmer" />}
       </div>
@@ -183,7 +186,7 @@ export default function VideoCard({ item, active, near, prewarm, soundOn, needsG
       {userPaused && controllable && <div className="pausebadge"><Play /></div>}
       {active && wantsTap && controllable && <div className="soundnudge"><Volume muted />Tap for sound</div>}
       {active && kind === "instagram" && playing && <div className="ignote">Tap the video to play it with sound</div>}
-      {broken && <div className="brokennote">This clip isn't available any more. Skipping it…</div>}
+      {broken && active && <div className="brokennote">{LABEL[item.source]} couldn't load this clip. Skipping it…</div>}
       {showHint && !broken && <div className="hint"><span>▲</span>swipe up for the next one</div>}
 
       <div className="meta">
