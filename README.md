@@ -39,10 +39,10 @@ request a quota increase from Google (YouTube API Services quota extension form)
 
 TikTok and Instagram expose embed players publicly but no third-party search API, so discovery on those
 platforms goes through a data provider. The built-in one is Apify (TikTok: `clockworks/tiktok-scraper`
-search; Instagram: `apify/instagram-hashtag-scraper` reels, falling back to top-creator reels via
-`apify/instagram-scraper` + `apify/instagram-reel-scraper`). Runs are asynchronous (start, poll, read
-dataset) and cost fractions of a cent per query. Instagram blocks hashtag scraping intermittently; TikTok is
-reliable. A generic JSON provider hook (`server/src/sources/provider.js`) is also available.
+video search; Instagram: `apify/instagram-hashtag-scraper` keyword reels). Runs are asynchronous (start,
+poll, read dataset), cost fractions of a cent per query, and carry a hard per-run spend cap
+(`APIFY_MAX_USD_PER_RUN`, default $0.50, the minimum Apify accepts). A generic JSON provider hook
+(`server/src/sources/provider.js`) is also available.
 YouTube's official Data API covers Shorts search directly.
 
 ## What happens when you use it

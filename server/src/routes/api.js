@@ -10,6 +10,7 @@ import { itemFromUrl, sourceStatus, SOURCES } from "../sources/index.js";
 import { aiStatus } from "../ai/claude.js";
 import { youtubeUnitsUsed } from "../sources/youtube.js";
 import { discoveryState } from "../ingest.js";
+import { apifyEnabled, apifyRunsToday } from "../sources/apify.js";
 
 export const apiRouter = Router();
 
@@ -21,8 +22,9 @@ apiRouter.get("/health", (_req, res) => {
     catalog: q.get("SELECT COUNT(*) AS n FROM videos")?.n || 0,
     discoveryProvider: !!config.discoveryProviderUrl,
     // True when at least one automated discovery path exists; otherwise the feed is fed by pasted links.
-    discoveryReady: !!config.youtubeApiKey || !!config.discoveryProviderUrl,
+    discoveryReady: !!config.youtubeApiKey || !!config.discoveryProviderUrl || apifyEnabled(),
     youtubeQuota: config.youtubeApiKey ? { used: youtubeUnitsUsed(), budget: config.youtubeDailyUnits } : null,
+    apify: apifyEnabled() ? { runsToday: apifyRunsToday(), dailyBudget: config.apifyDailyRuns } : null,
     ...discoveryState(),
   });
 });
@@ -65,7 +67,7 @@ apiRouter.get("/feed", async (req, res) => {
       return { impressionId: id, reason: p.explanation, score: round(p.total), ...publicVideo(p.video) };
     }),
   );
-  res.json({ items, poolSize: candidates.length, discovering: candidates.length < config.ranking.minPool, discoveryReady: !!config.youtubeApiKey || !!config.discoveryProviderUrl });
+  res.json({ items, poolSize: candidates.length, discovering: candidates.length < config.ranking.minPool, discoveryReady: !!config.youtubeApiKey || !!config.discoveryProviderUrl || apifyEnabled() });
 });
 
 /* ------------------------------------ events ------------------------------------ */

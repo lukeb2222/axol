@@ -37,6 +37,9 @@ export const config = {
   instagramOembedToken: process.env.IG_OEMBED_TOKEN || "",
   // Apify token enables automated TikTok and Instagram discovery (see sources/apify.js).
   apifyToken: process.env.APIFY_TOKEN || "",
+  // Runs per day across TikTok + Instagram. 10/day is roughly $4-5/month, inside Apify's free credit.
+  apifyDailyRuns: Number(process.env.APIFY_DAILY_RUNS || 10),
+  apifyMaxUsdPerRun: Number(process.env.APIFY_MAX_USD_PER_RUN || 0.5),
 
   // Learning hyper-parameters
   learning: {

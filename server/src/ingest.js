@@ -7,6 +7,7 @@ import { TAXONOMY } from "./ai/taxonomy.js";
 
 const normQuery = (s) => String(s).toLowerCase().replace(/\s+/g, " ").trim();
 let quotaExhaustedUntil = 0;
+const pausedUntil = {}; // source -> timestamp
 export const discoveryState = () => ({ quotaPausedUntil: quotaExhaustedUntil || null });
 
 const inflight = new Map(); // userId -> Promise, so a scroll burst triggers one run
@@ -68,39 +69,47 @@ export async function tagPending(ids) {
 export function runDiscovery(userId, { limit = 6, staleMs = 6 * 3600e3 } = {}) {
   if (inflight.has(userId)) return inflight.get(userId);
   const p = (async () => {
-    // Only sources that can actually search count toward the limit; the rest are parked.
+    // Each source that can search gets its own lane; lanes run concurrently so a slow
+    // scraper never holds up YouTube, and no platform starves the others.
     const active = Object.values(SOURCES).filter((s) => s.canDiscover()).map((s) => s.name);
     if (!active.length) return 0;
-    const rows = q.all(
-      `SELECT id, source, query FROM discovery_queries WHERE user_id = ? AND source IN (${active.map(() => "?").join(",")})
-         AND (last_run_at IS NULL OR last_run_at < ?)
-       ORDER BY last_run_at IS NOT NULL, CASE source WHEN 'youtube' THEN 0 ELSE 1 END, created_at DESC LIMIT ?`,
-      userId, ...active, now() - staleMs, limit,
-    );
-    let added = 0;
-    for (const r of rows) {
-      // Shared cache: if anyone ran this query recently, the catalog already has its results.
-      const key = normQuery(r.query);
-      const cached = q.get("SELECT last_run_at, items_found FROM query_runs WHERE source = ? AND query_norm = ?", r.source, key);
-      if (cached && now() - cached.last_run_at < config.ranking.queryCacheMs) {
-        q.run("UPDATE discovery_queries SET last_run_at = ?, items_found = ? WHERE id = ?", now(), cached.items_found, r.id);
-        continue;
+    const perSource = (name) => (name === "youtube" ? limit : Math.max(1, Math.ceil(limit / 3)));
+    const lanes = active.map(async (name) => {
+      const rows = q.all(
+        `SELECT id, source, query FROM discovery_queries WHERE user_id = ? AND source = ? AND (last_run_at IS NULL OR last_run_at < ?)
+         ORDER BY last_run_at IS NOT NULL, created_at DESC LIMIT ?`,
+        userId, name, now() - staleMs, perSource(name),
+      );
+      let added = 0;
+      for (const r of rows) {
+        // Shared cache: if anyone ran this query recently, the catalog already has its results.
+        const key = normQuery(r.query);
+        const cached = q.get("SELECT last_run_at, items_found FROM query_runs WHERE source = ? AND query_norm = ?", r.source, key);
+        if (cached && now() - cached.last_run_at < config.ranking.queryCacheMs) {
+          q.run("UPDATE discovery_queries SET last_run_at = ?, items_found = ? WHERE id = ?", now(), cached.items_found, r.id);
+          continue;
+        }
+        if (now() < (pausedUntil[name] || 0)) break;
+        try {
+          let items = await SOURCES[name].search(r.query, { max: 12 });
+          // Provider results already carry metadata; only enrich what is still bare.
+          if (SOURCES[name].enrich) items = await Promise.all(items.map((i) => (i.title ? i : SOURCES[name].enrich(i))));
+          const fresh = upsertVideos(items);
+          added += fresh.length;
+          q.run("UPDATE discovery_queries SET last_run_at = ?, items_found = items_found + ? WHERE id = ?", now(), items.length, r.id);
+          q.run("INSERT INTO query_runs (source, query_norm, last_run_at, items_found) VALUES (?, ?, ?, ?) ON CONFLICT(source, query_norm) DO UPDATE SET last_run_at = excluded.last_run_at, items_found = excluded.items_found", r.source, key, now(), items.length);
+          await tagPending(fresh);
+        } catch (e) {
+          if (e.quota) { pausedUntil[name] = now() + 3600e3; if (name === "youtube") quotaExhaustedUntil = pausedUntil[name]; console.warn("[ingest]", e.message); break; }
+          console.warn(`[ingest] ${r.source} "${r.query}": ${e.message}`);
+          q.run("UPDATE discovery_queries SET last_run_at = ? WHERE id = ?", now(), r.id);
+        }
       }
-      if (r.source === "youtube" && now() < quotaExhaustedUntil) continue;
-      try {
-        let items = await SOURCES[r.source].search(r.query, { max: 12 });
-        if (SOURCES[r.source].enrich) items = await Promise.all(items.map((i) => SOURCES[r.source].enrich(i)));
-        const fresh = upsertVideos(items);
-        added += fresh.length;
-        q.run("UPDATE discovery_queries SET last_run_at = ?, items_found = items_found + ? WHERE id = ?", now(), items.length, r.id);
-        q.run("INSERT INTO query_runs (source, query_norm, last_run_at, items_found) VALUES (?, ?, ?, ?) ON CONFLICT(source, query_norm) DO UPDATE SET last_run_at = excluded.last_run_at, items_found = excluded.items_found", r.source, key, now(), items.length);
-        await tagPending(fresh);
-      } catch (e) {
-        if (e.quota) { quotaExhaustedUntil = now() + 3600e3; console.warn("[ingest]", e.message); break; }
-        console.warn(`[ingest] ${r.source} "${r.query}": ${e.message}`);
-        q.run("UPDATE discovery_queries SET last_run_at = ? WHERE id = ?", now(), r.id);
-      }
-    }
+      return added;
+    });
+    // The caller only waits for the fastest useful lane (YouTube); the rest finish in the background.
+    const results = await Promise.allSettled(lanes);
+    const added = results.reduce((n, r) => n + (r.status === "fulfilled" ? r.value : 0), 0);
     return added;
   })().finally(() => inflight.delete(userId));
   inflight.set(userId, p);

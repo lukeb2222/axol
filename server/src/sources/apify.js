@@ -4,13 +4,22 @@
 //
 // Actors (verified input schemas, Nov 2026):
 //   clockworks/tiktok-scraper      searchQueries + searchSection "/video"  (pay per event, ~$0.0002/video)
-//   apify/instagram-hashtag-scraper hashtags + resultsType "reels"          (Instagram blocks this intermittently)
-//   apify/instagram-scraper         search/searchType "user" → profiles       (fallback route, step 1)
-//   apify/instagram-reel-scraper    username[] → reels                       (fallback route, step 2)
+//   apify/instagram-hashtag-scraper keywordSearch + resultsType "reels"     (~10s per query)
+// Every run is started with a hard spend cap (APIFY_MAX_USD_PER_RUN, default $0.50, the minimum Apify accepts).
 import { config } from "../config.js";
+import { q } from "../db.js";
+
+// Daily run budget: each run costs roughly 1-2 cents, so this bounds spend.
+const today = () => new Date().toISOString().slice(0, 10);
+export const apifyRunsToday = () => q.get("SELECT units FROM quota_ledger WHERE source = 'apify' AND day = ?", today())?.units || 0;
+export class ApifyBudgetError extends Error { constructor() { super("Apify daily run budget reached; TikTok/Instagram discovery resumes tomorrow"); this.quota = true; } }
+function spendRun() {
+  if (apifyRunsToday() >= config.apifyDailyRuns) throw new ApifyBudgetError();
+  q.run("INSERT INTO quota_ledger (source, day, units) VALUES ('apify', ?, 1) ON CONFLICT(source, day) DO UPDATE SET units = units + 1", today());
+}
 
 const API = "https://api.apify.com/v2";
-const MAX_WAIT_MS = 240e3;
+const MAX_WAIT_MS = 150e3;
 
 export const apifyEnabled = () => !!config.apifyToken;
 
@@ -26,8 +35,10 @@ async function api(path, { method = "GET", body } = {}) {
 }
 
 /** Run an actor to completion and return its dataset items. */
-export async function runActor(actor, input, { timeoutSec = 240, memory = 1024, limit = 100 } = {}) {
-  const { data: run } = await api(`/acts/${actor}/runs?memory=${memory}&timeout=${timeoutSec}`, { method: "POST", body: input });
+export async function runActor(actor, input, { timeoutSec = 120, memory = 1024, limit = 100 } = {}) {
+  spendRun();
+  const cap = config.apifyMaxUsdPerRun;
+  const { data: run } = await api(`/acts/${actor}/runs?memory=${memory}&timeout=${timeoutSec}&maxTotalChargeUsd=${cap}`, { method: "POST", body: input });
   if (!run?.id) throw new Error(`apify: could not start ${actor}`);
   const started = Date.now();
   while (Date.now() - started < MAX_WAIT_MS) {
@@ -75,19 +86,24 @@ const normalizeReel = (p) => ({
 const isReel = (p) => p.type === "Video" || p.productType === "clips" || !!p.videoUrl || !!p.videoDuration;
 
 export async function instagramSearch(query, { max = 12 } = {}) {
-  const tag = query.replace(/^#/, "").replace(/\s+/g, "").toLowerCase();
-  // Route 1: hashtag reels (fast when Instagram allows it).
-  try {
-    const items = await runActor("apify~instagram-hashtag-scraper", { hashtags: [tag], resultsType: "reels", resultsLimit: Math.min(30, max) }, { limit: max });
-    const reels = items.filter(isReel).map(normalizeReel).filter((r) => r.url);
-    if (reels.length) return reels;
-  } catch (e) {
-    console.warn(`[apify] instagram hashtag "${tag}": ${e.message}`);
+  const tag = query.replace(/^#/, "").trim().toLowerCase();
+  const n = Math.min(30, max);
+  // Keyword reels search is the reliable route (verified: ~10s per query). Plain hashtag
+  // pages are blocked by Instagram intermittently, so they are only the second attempt.
+  // Deliberately no profile-scraping fallback: it is slow and costs dollars per run.
+  const attempts = [
+    { hashtags: [tag], keywordSearch: true, resultsType: "reels", resultsLimit: n },
+    { hashtags: [tag.replace(/\s+/g, "")], resultsType: "reels", resultsLimit: n },
+  ];
+  for (const input of attempts) {
+    try {
+      const items = await runActor("apify~instagram-hashtag-scraper", input, { limit: max, timeoutSec: 90 });
+      const reels = items.filter(isReel).map(normalizeReel).filter((r) => r.url);
+      if (reels.length) return reels;
+    } catch (e) {
+      if (e.quota) throw e;
+      console.warn(`[apify] instagram "${tag}": ${e.message}`);
+    }
   }
-  // Route 2: top creators for the topic → their recent reels.
-  const profiles = await runActor("apify~instagram-scraper", { search: query, searchType: "user", searchLimit: 3 }, { limit: 5 }).catch(() => []);
-  const usernames = profiles.map((p) => p.username).filter(Boolean).slice(0, 3);
-  if (!usernames.length) return [];
-  const reels = await runActor("apify~instagram-reel-scraper", { username: usernames, resultsLimit: Math.ceil(max / usernames.length) }, { limit: max });
-  return reels.filter(isReel).map(normalizeReel).filter((r) => r.url);
+  return [];
 }
