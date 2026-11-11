@@ -44,6 +44,14 @@ export function learnFromImpression(userId, imp, video) {
     const upd = db.prepare("UPDATE interests SET weight = ?, impressions = impressions + 1, positive = positive + ?, updated_at = ? WHERE user_id = ? AND tag = ?");
     const ins = db.prepare("INSERT INTO interests (user_id, tag, weight, impressions, positive, origin, updated_at) VALUES (?, ?, ?, 1, ?, 'learned', ?)");
 
+    const all = db.prepare("SELECT tag, weight FROM interests WHERE user_id = ?").all(userId);
+    const words = (t) => t.split("-").filter((x) => x.length > 2);
+    const related = (tag) => {
+      const ws = new Set(words(tag));
+      let best = null;
+      for (const r of all) if (r.tag !== tag && words(r.tag).some((x) => ws.has(x)) && (!best || Math.abs(r.weight) > Math.abs(best.weight))) best = r;
+      return best;
+    };
     for (const { tag, relevance } of tags) {
       const row = get.get(userId, tag);
       const positive = score > 0.15 ? 1 : 0;
@@ -54,6 +62,15 @@ export function learnFromImpression(userId, imp, video) {
         const w = clamp(row.weight + delta, -L.maxWeight, L.maxWeight);
         upd.run(w, positive, now(), userId, tag);
         deltas.push({ tag, delta: w - row.weight, weight: w });
+      } else if (related(tag)) {
+        // No exact interest, but a related one shares a word: train that one at reduced strength.
+        const rel = related(tag);
+        const room = 1 - Math.min(1, Math.abs(rel.weight) / L.maxWeight);
+        const delta = L.rate * score * relevance * 0.6 * (0.35 + 0.65 * room);
+        const w = clamp(rel.weight + delta, -L.maxWeight, L.maxWeight);
+        upd.run(w, positive, now(), userId, rel.tag);
+        rel.weight = w;
+        deltas.push({ tag: rel.tag, delta, weight: w });
       } else if (score > 0.3 && relevance >= 0.5) {
         // Only adopt brand-new tags when the clip clearly landed.
         const w = L.rate * score * relevance;

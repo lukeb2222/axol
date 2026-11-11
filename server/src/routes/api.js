@@ -20,6 +20,7 @@ apiRouter.get("/health", (_req, res) => {
     ai: aiStatus(),
     sources: sourceStatus(),
     catalog: q.get("SELECT COUNT(*) AS n FROM videos")?.n || 0,
+    catalogBySource: Object.fromEntries(q.all("SELECT source, COUNT(*) AS n FROM videos GROUP BY source").map((r) => [r.source, r.n])),
     discoveryProvider: !!config.discoveryProviderUrl,
     // True when at least one automated discovery path exists; otherwise the feed is fed by pasted links.
     discoveryReady: !!config.youtubeApiKey || !!config.discoveryProviderUrl || apifyEnabled(),

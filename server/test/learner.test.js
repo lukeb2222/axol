@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 process.env.AXOL_DB_PATH = ":memory:";
 process.env.AXOL_DISABLE_AI = "1";
 const { engagementScore } = await import("../src/learner.js");
-const { scoreVideo, rankBatch } = await import("../src/ranker.js");
+const { scoreVideo, rankBatch, buildTokenIndex } = await import("../src/ranker.js");
 const { heuristicInitial } = await import("../src/ai/profile.js");
 
 test("engagement: quick skip is strongly negative", () => {
@@ -35,4 +35,16 @@ test("heuristic profile extracts tags and dislikes", () => {
   const tags = p.interests.map((i) => i.tag);
   assert.ok(tags.includes("skateboarding") && tags.includes("jazz"));
   assert.ok(p.queries.youtube.length > 0);
+});
+
+test("ranker: related-word interests match and related avoids filter", () => {
+  const interests = new Map([["specialty-coffee", { weight: 3, impressions: 0 }]]);
+  const model = { interests, avoid: new Set(["pranks"]), totalViews: 5, sourceAff: new Map(), tokenIndex: buildTokenIndex(interests) };
+  const mk = (tags) => ({ id: tags.join(), tags_json: JSON.stringify(tags.map((t) => ({ tag: t, relevance: 1 }))), created_at: Date.now(), source: "youtube", embed_kind: "youtube", creator: "" });
+  const rand = () => 0.5;
+  const coffee = scoreVideo(mk(["coffee"]), model, { rand });
+  const other = scoreVideo(mk(["baseball"]), model, { rand });
+  assert.ok(coffee.match > 1.5 && coffee.total > other.total);
+  assert.match(coffee.explanation, /specialty coffee/);
+  assert.equal(scoreVideo(mk(["prank-videos"]), model, { rand }), null);
 });

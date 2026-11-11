@@ -119,6 +119,12 @@ noise     = 0.08 · Gumbel()                                        # stochastic
 total     = match + explore + freshness + platform + noise
 ```
 
+**Related-word matching.** Interests and clip tags are written by separate AI calls, so
+"specialty-coffee" (profile) and "coffee" (clip) must still meet. When a clip tag has no exact
+interest, the ranker looks for an interest sharing a meaningful word and counts it at 60 % strength;
+the learner trains that related interest at the same reduced strength, and an avoided topic such as
+"pranks" also blocks "prank-videos".
+
 Batch assembly is **greedy with a diversity penalty**: after each pick, any candidate sharing one of
 its top-3 tags loses `0.3 × relevance` per repeat, and the same creator loses `0.45` per repeat.
 Then, with 60 % probability, the highest-`explore` leftover is inserted at position 4 as a
