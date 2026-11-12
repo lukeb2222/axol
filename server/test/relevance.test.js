@@ -139,6 +139,19 @@ test("explanation: stated-but-unwatched interests say \"asked for\"; unconfirmed
   assert.equal(g.why.label, DISCOVERY_LABEL);
 });
 
+test("explanation: several tags pointing at one interest add up instead of cancelling the reason", () => {
+  // The viewer's interest is "rock-climbing"; the clip says the same thing three ways.
+  const clip = { id: "climb", source: "youtube", created_at: Date.now(), creator: "", media_file: "",
+    tags_json: JSON.stringify([{ tag: "climbing", relevance: 1 }, { tag: "bouldering", relevance: 0.9 }, { tag: "climbing-gym", relevance: 0.8 }, { tag: "highlight", relevance: 0.5 }]) };
+  const asked = buildModel({ interests: [{ tag: "rock-climbing", weight: 2.3, positive: 0, origin: "onboarding" }, { tag: "bouldering", weight: 1.4, positive: 0, origin: "ai" }] });
+  const a = scoreVideo(clip, asked, { rand: mid });
+  assert.equal(a.why.kind, "asked");
+  assert.equal(a.why.label, "Because you asked for climbing");
+  // Likewise for a BMX taste stored under a narrower name.
+  const bmx = scoreVideo(byId["bmx-2"], buildModel({ interests: [{ tag: "bmx-riding", weight: 2.4, positive: 5 }] }), { rand: mid });
+  assert.equal(bmx.why.label, "Because you watch BMX");
+});
+
 test("explanation: every clip in a ranked batch carries its own consistent reason", () => {
   const model = buildModel({ interests: [{ tag: "motocross", weight: 3, positive: 5 }, { tag: "coffee", weight: 2, positive: 3 }], totalViews: 20 });
   const batch = rankBatch(CATALOG, model, 8, { rand: mid, wild: false });

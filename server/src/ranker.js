@@ -120,14 +120,27 @@ export const DISCOVERY_LABEL = "Something new, to see if it lands";
 export function explain({ tags, links, match, explore }) {
   const clipTopics = steerableTopics(tags).map((t) => t.label);
   const discovery = (detail) => ({ kind: "discovery", label: DISCOVERY_LABEL, topic: null, detail, clipTopics });
-  const top = links.filter((l) => l.value > 0).sort((a, b) => b.value - a.value)[0];
-  if (!top) return discovery("This is a test pick. Nothing you've watched so far points to it.");
+  // Several of a clip's tags often point at the same interest ("climbing", "bouldering" and
+  // "climbing-gym" all at "rock-climbing"). Their pull is added up per interest; the strongest
+  // single tag within the winning interest is the one the explanation names.
+  const perInterest = new Map();
+  for (const l of links) {
+    const g = perInterest.get(l.interest.key) || { sum: 0, best: null };
+    g.sum += l.value;
+    const supports = l.relevance >= 0.5 && (l.kind === "same" || l.strength >= 1);
+    const bestSupports = g.best && g.best.relevance >= 0.5 && (g.best.kind === "same" || g.best.strength >= 1);
+    if (l.value > 0 && (!g.best || (supports && !bestSupports) || (supports === bestSupports && l.value > g.best.value))) g.best = l;
+    perInterest.set(l.interest.key, g);
+  }
+  const winner = [...perInterest.values()].filter((g) => g.sum > 0 && g.best).sort((a, b) => b.sum - a.sum)[0];
+  if (!winner) return discovery("This is a test pick. Nothing you've watched so far points to it.");
+  const top = winner.best;
 
   const it = top.interest;
   // What the two sides have in common, in words: the topic itself, or the overlap.
   const topic = top.kind === "same" ? prettyTopic(it.tag) : prettyShared(top.shared, it.tag, top.clipTag);
   const clipSupports = top.relevance >= 0.5 && (top.kind === "same" || top.strength >= 1) && !isFormatOnly(top);
-  const drivesTheScore = match >= R.explainMinMatch && top.value >= match * 0.5 && match >= explore * 0.5;
+  const drivesTheScore = match >= R.explainMinMatch && winner.sum >= match * 0.5 && match >= explore * 0.5;
   if (!clipSupports || !drivesTheScore) {
     return discovery(`This is a test pick. It is only loosely connected to ${prettyTopic(it.tag)}, so axol is checking whether it lands.`);
   }
