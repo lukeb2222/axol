@@ -3,7 +3,7 @@
 // action on either applies to the topic as a whole without losing what was learned under any name.
 import { q, now, transaction } from "./db.js";
 import { config } from "./config.js";
-import { topicKey } from "./topics.js";
+import { topicKey, isAbout } from "./topics.js";
 import { normalizeTag } from "./ai/taxonomy.js";
 
 const MAX = config.learning.maxWeight;
@@ -77,6 +77,13 @@ export function boostTopic(userId, rawTag, { create = false } = {}) {
 export function lessTopic(userId, rawTag) {
   const tag = normalizeTag(rawTag);
   if (!tag) return null;
+  // Narrower interests about the same subject ("bmx-riding", "freestyle-bmx" under "bmx") would
+  // otherwise keep pulling it back in. They are set to neutral, not deleted: what was learned
+  // about them stays on record and they can rise again if the viewer watches them.
+  const key = topicKey(tag);
+  for (const r of q.all("SELECT tag, weight FROM interests WHERE user_id = ? AND weight > 0", userId)) {
+    if (topicKey(r.tag) !== key && isAbout(r.tag, tag)) q.run("UPDATE interests SET weight = 0, updated_at = ? WHERE user_id = ? AND tag = ?", now(), userId, r.tag);
+  }
   const row = consolidate(userId, tag);
   if (row) {
     const weight = clamp(Math.min(row.weight, 0) - 1.5);

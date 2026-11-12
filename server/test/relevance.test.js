@@ -219,6 +219,31 @@ test("steer: Less BMX swaps BMX out of the already-loaded queue and leaves the c
   assert.deepEqual(getProfile(viewer).avoid, []);
 });
 
+test("steer: Less BMX lasts beyond the loaded queue, even when the interest is stored under a narrower name", () => {
+  // The viewer's BMX taste lives in "bmx-riding" and "freestyle-bmx", not in a row called "bmx".
+  const viewer = makeViewer([
+    { tag: "bmx-riding", weight: 2.4, positive: 6, origin: "onboarding" },
+    { tag: "freestyle-bmx", weight: 0.6, positive: 1, origin: "ai" },
+    { tag: "coffee", weight: 1, positive: 2 },
+  ]);
+  const before = rankBatch(CATALOG, buildModel({ interests: interestsOf(viewer) }), 3, { rand: mid, wild: false });
+  assert.ok(clipIsAbout(before[0].video, "bmx") && clipIsAbout(before[1].video, "bmx") && before[0].match > 0.5, "BMX leads this viewer's ranking beforehand");
+
+  const [current, ...queue] = serveQueue(viewer, ["bmx-1", "bmx-2", "ai-1"]);
+  steerFeed(viewer, { impressionId: current, tag: "bmx", direction: "less", queue }, { rand: mid });
+
+  const rows = interestsOf(viewer);
+  assert.equal(rows.find((r) => r.tag === "bmx-riding").weight, 0, "the narrower interest is neutralized, not deleted");
+  assert.equal(rows.find((r) => r.tag === "bmx-riding").positive, 6, "its history is kept");
+  assert.ok(rows.find((r) => r.tag === "bmx").weight < 0);
+  assert.ok(rows.find((r) => r.tag === "coffee").weight === 1, "unrelated preferences are untouched");
+  // Every later batch ranks against the same model: BMX no longer scores above neutral.
+  const model = buildModel({ interests: rows });
+  for (const id of ["bmx-1", "bmx-2", "bmx-3"]) assert.ok(scoreVideo(byId[id], model, { rand: mid }).match < 0, `${id} should now rank below neutral`);
+  const after = rankBatch(CATALOG, model, 6, { rand: mid, wild: false });
+  assert.ok(after.every((p) => !clipIsAbout(p.video, "bmx")), `no BMX in the next batch: ${after.map((p) => p.video.id)}`);
+});
+
 test("steer: More puts matching clips within the next three when there is inventory", () => {
   const viewer = makeViewer([{ tag: "coffee", weight: 2, positive: 4 }]);
   const [current, ...queue] = serveQueue(viewer, ["moto-race", "ai-1", "coffee-tutorial", "ai-2", "hoops-1"]);
