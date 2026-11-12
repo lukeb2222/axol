@@ -3,7 +3,7 @@ import { Router } from "express";
 import { db, q, uid, now, transaction } from "../db.js";
 import { config } from "../config.js";
 import { safeTags, completionOf } from "../learner.js";
-import { loadUserModel, scoreVideo } from "../ranker.js";
+import { loadUserModel, scoreVideo, PLAYABLE } from "../ranker.js";
 import { discoverTopic, topicStatus, saveQueries } from "../ingest.js";
 import { normalizeTag } from "../ai/taxonomy.js";
 import { publicVideo } from "../videoView.js";
@@ -148,7 +148,7 @@ insightsRouter.get("/search", async (req, res) => {
   // Match the catalog on tags, the query that found the clip, and the title.
   const like = stems.map(() => "(LOWER(v.title) LIKE ? OR v.tags_json LIKE ? OR LOWER(v.query) LIKE ?)").join(" OR ");
   const params = stems.flatMap((s) => [`%${s}%`, `%${s}%`, `%${s}%`]);
-  const candidates = q.all(`SELECT v.* FROM videos v WHERE v.tagged = 1 AND (${like}) ORDER BY v.created_at DESC LIMIT 800`, ...params);
+  const candidates = q.all(`SELECT v.* FROM videos v WHERE v.tagged = 1 AND ${PLAYABLE} AND (${like}) ORDER BY v.created_at DESC LIMIT 800`, ...params);
   const model = loadUserModel(userId);
   const scored = [];
   for (const v of candidates) {

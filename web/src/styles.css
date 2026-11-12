@@ -147,6 +147,8 @@ textarea { min-height: 140px; resize: vertical; line-height: 1.5; }
 }
 .frame iframe { width: 100%; height: 100%; border: 0; display: block; transition: opacity 0.3s ease; }
 .frame video { width: 100%; height: 100%; display: block; object-fit: cover; background: #000; }
+.frame.native.whole { background: transparent; }
+.frame.native.whole video { object-fit: contain; background: transparent; }
 /* A player that has not yet proven it loaded is kept invisible: an empty or error page from the
    platform would otherwise show as a solid white block. The poster and backdrop show instead. */
 .frame.wait { background: transparent; }

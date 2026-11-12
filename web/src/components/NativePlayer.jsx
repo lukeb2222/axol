@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 /**
  * axol's own player, used whenever the server holds the clip's file. A plain <video> element:
@@ -10,6 +10,10 @@ export default function NativePlayer({ item, active, warm, soundOn, paused, post
   const live = useRef({});
   live.current = { active, soundOn, paused, onTick, onPlaying, onReplay, onSoundBlocked, onFailed };
   const lastTime = useRef(0);
+  // Vertical clips fill the frame. Square, 4:5 and landscape clips are shown whole instead of
+  // having most of the picture cropped away.
+  const [whole, setWhole] = useState(false);
+  const onMeta = () => { const v = ref.current; if (v?.videoWidth) { const r = v.videoWidth / v.videoHeight; setWhole(r > 0.62 || r < 0.5); } };
 
   useEffect(() => { if (videoRef) videoRef.current = ref.current; }, [videoRef]);
 
@@ -39,11 +43,11 @@ export default function NativePlayer({ item, active, warm, soundOn, paused, post
   };
 
   return (
-    <div className="frame native">
+    <div className={`frame native ${whole ? "whole" : ""}`}>
       <video ref={ref} src={item.videoUrl} poster={poster || undefined} playsInline loop muted={!soundOn}
         preload={active || warm ? "auto" : "metadata"} disablePictureInPicture controlsList="nodownload noplaybackrate"
         onPlaying={() => { if (live.current.active) live.current.onPlaying?.(); }}
-        onTimeUpdate={onTime}
+        onTimeUpdate={onTime} onLoadedMetadata={onMeta}
         onError={() => live.current.onFailed?.()} />
     </div>
   );

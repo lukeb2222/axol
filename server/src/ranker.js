@@ -110,10 +110,15 @@ export function rankBatch(candidates, model, size = R.batchSize, opts = {}) {
   return picked;
 }
 
+// YouTube plays through its player API, which is dependable. TikTok and Instagram embeds are not
+// (rate limits, tap-to-play, layouts that change per clip), so their clips are served only once
+// axol holds the file and can play it in its own player.
+export const PLAYABLE = "(v.source = 'youtube' OR v.media_file != '')";
+
 export function unseenCandidates(userId, limit = 400) {
   return q.all(
     `SELECT v.* FROM videos v
-     WHERE v.tagged = 1 AND v.id NOT IN (
+     WHERE v.tagged = 1 AND ${PLAYABLE} AND v.id NOT IN (
        SELECT video_id FROM impressions WHERE user_id = ? AND (finalized = 1 OR watched_ms > 0 OR served_at > ?))
      ORDER BY v.created_at DESC LIMIT ?`,
     userId, Date.now() - 30 * 60e3, limit,

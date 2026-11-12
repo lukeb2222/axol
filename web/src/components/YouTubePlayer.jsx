@@ -39,7 +39,7 @@ export default function YouTubePlayer({ item, active, soundOn, paused, prewarm, 
               try { p.mute(); p.playVideo(); } catch {}
               now.onSoundBlocked?.(true);
             }
-          }, 1800);
+          }, 4000);
         }
       } else if (!s.active && s.prewarm && !warmed.current) {
         p.mute();

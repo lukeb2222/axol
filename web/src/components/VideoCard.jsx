@@ -27,7 +27,7 @@ export default function VideoCard({ item, active, near, prewarm, warm, soundOn, 
   // Where the browser only allows sound after a tap (iOS Safari), each clip starts muted and
   // a tap on it grants sound for that clip.
   const [granted, setGranted] = useState(false);
-  const playerSound = (soundOn && !needsGesture) || granted;
+  const playerSound = soundOn && (!needsGesture || granted);
   const wantsTap = soundOn && needsGesture && !granted;
 
   // Watch accounting lives in refs so it never triggers renders.
@@ -141,11 +141,9 @@ export default function VideoCard({ item, active, near, prewarm, warm, soundOn, 
     const nowT = Date.now();
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left, y = e.clientY - rect.top;
-    const neverChoseSound = !soundOn && localStorage.getItem("axol_sound") === null;
-    if (wantsTap || neverChoseSound) {
+    if (wantsTap) {
       // This tap is the gesture browsers require before a video may play with sound.
       setGranted(true);
-      if (neverChoseSound) onWantSound?.();
       try { playerRef.current?.unMute?.(); playerRef.current?.setVolume?.(100); playerRef.current?.playVideo?.(); } catch {}
       // Unmuting inside the tap itself is what satisfies the browser's gesture rule.
       try { if (videoRef.current) { videoRef.current.muted = false; videoRef.current.play().catch(() => {}); } } catch {}
@@ -179,7 +177,7 @@ export default function VideoCard({ item, active, near, prewarm, warm, soundOn, 
         {render && kind === "native" && (
           <NativePlayer item={item} active={active} warm={prewarm || warm} paused={isPaused} soundOn={playerSound} poster={bg}
             onTick={onTick} onPlaying={onPlaying} onReplay={onReplay} onSoundBlocked={onSoundBlocked}
-            onFailed={() => setNativeFailed(true)} videoRef={videoRef} />
+            onFailed={() => { setNativeFailed(true); markBroken(false); }} videoRef={videoRef} />
         )}
         {render && kind === "youtube" && (
           <YouTubePlayer item={item} active={active} paused={isPaused} prewarm={prewarm || warm} soundOn={playerSound}

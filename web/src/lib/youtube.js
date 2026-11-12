@@ -17,6 +17,7 @@ export function loadYT() {
 // Global sound preference: browsers only allow unmuted autoplay after a gesture,
 // so we start muted and flip every player once the user taps the sound pill.
 export const sound = {
-  get on() { return localStorage.getItem("axol_sound") === "1"; },
+  // On unless the viewer turned it off.
+  get on() { return localStorage.getItem("axol_sound") !== "0"; },
   set on(v) { localStorage.setItem("axol_sound", v ? "1" : "0"); window.dispatchEvent(new Event("axol:sound")); },
 };

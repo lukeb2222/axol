@@ -18,7 +18,16 @@ const easeOutQuart = (t) => 1 - Math.pow(1 - t, 4);
 export default function ReelScroller({ items, onNeedMore, onRemove, paused, startIndex = 0, overlay, onClose, title, tail, right }) {
   const [active, setActive] = useState(startIndex);
   const [soundOn, setSoundOn] = useState(sound.on);
-  const [needsGesture, setNeedsGesture] = useState(false);
+  // Browsers refuse to start video with sound until the viewer has interacted with the page.
+  // Until then clips play muted; the first tap, click or key press anywhere turns sound on.
+  // (If a browser blocks sound again later, as iOS Safari can, this flips back until the next tap.)
+  const [needsGesture, setNeedsGesture] = useState(() => (navigator.userActivation ? !navigator.userActivation.hasBeenActive : false));
+  useEffect(() => {
+    const unlock = () => setNeedsGesture(false);
+    window.addEventListener("pointerdown", unlock, true);
+    window.addEventListener("keydown", unlock, true);
+    return () => { window.removeEventListener("pointerdown", unlock, true); window.removeEventListener("keydown", unlock, true); };
+  }, []);
   const [toasts, setToasts] = useState([]);
   const [tuned, setTuned] = useState(0);
   const [hint, setHint] = useState(() => !overlay && !localStorage.getItem("axol_hinted"));
@@ -196,7 +205,7 @@ export default function ReelScroller({ items, onNeedMore, onRemove, paused, star
       <div className="topbar">
         <div className="row">
           {onClose && <button className="pill" onClick={onClose} aria-label="Back"><Back /></button>}
-          <button className={`pill ${soundOn ? "hot" : ""}`} onClick={toggleSound}><Volume muted={!soundOn} />{soundOn ? "Sound on" : "Tap for sound"}</button>
+          <button className={`pill ${soundOn ? "hot" : ""}`} onClick={toggleSound}><Volume muted={!soundOn || needsGesture} />{!soundOn ? "Sound off" : needsGesture ? "Tap for sound" : "Sound on"}</button>
         </div>
         <div className="row">
           {title && <span className="pill">{title}</span>}
