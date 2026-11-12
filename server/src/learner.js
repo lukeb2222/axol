@@ -1,6 +1,7 @@
 // Converts raw watch behaviour into an engagement score and nudges interest weights.
 import { db, q, now, transaction } from "./db.js";
 import { config } from "./config.js";
+import { topicKey, relate } from "./topics.js";
 
 const L = config.learning;
 
@@ -44,37 +45,52 @@ export function learnFromImpression(userId, imp, video) {
     const upd = db.prepare("UPDATE interests SET weight = ?, impressions = impressions + 1, positive = positive + ?, updated_at = ? WHERE user_id = ? AND tag = ?");
     const ins = db.prepare("INSERT INTO interests (user_id, tag, weight, impressions, positive, origin, updated_at) VALUES (?, ?, ?, 1, ?, 'learned', ?)");
 
+    // The viewer's interests, findable by canonical topic and by subject word.
     const all = db.prepare("SELECT tag, weight FROM interests WHERE user_id = ?").all(userId);
-    const words = (t) => t.split("-").filter((x) => x.length > 2);
+    const byKey = new Map();
+    for (const r of all) { const k = topicKey(r.tag); const cur = byKey.get(k); if (!cur || Math.abs(r.weight) > Math.abs(cur.weight)) byKey.set(k, r); }
+    // A related interest must share the clip tag's SUBJECT, not just a format word: a coffee POV
+    // says nothing about a motocross-POV interest.
     const related = (tag) => {
-      const ws = new Set(words(tag));
       let best = null;
-      for (const r of all) if (r.tag !== tag && words(r.tag).some((x) => ws.has(x)) && (!best || Math.abs(r.weight) > Math.abs(best.weight))) best = r;
+      for (const r of all) {
+        const rel = relate(r.tag, tag);
+        if (!rel || rel.kind !== "related") continue;
+        const pull = Math.abs(r.weight) * rel.strength;
+        if (!best || pull > best.pull) best = { row: r, strength: rel.strength, pull };
+      }
       return best;
     };
     for (const { tag, relevance } of tags) {
-      const row = get.get(userId, tag);
+      // The same topic under another name ("big-air-motocross") trains the row the viewer already has.
+      const own = byKey.get(topicKey(tag));
+      const row = own ? get.get(userId, own.tag) : null;
       const positive = score > 0.15 ? 1 : 0;
       if (row) {
         // Soft ceiling: the closer |w| is to maxWeight the smaller the step.
         const room = 1 - Math.min(1, Math.abs(row.weight) / L.maxWeight);
         const delta = L.rate * score * relevance * (0.35 + 0.65 * room);
         const w = clamp(row.weight + delta, -L.maxWeight, L.maxWeight);
-        upd.run(w, positive, now(), userId, tag);
-        deltas.push({ tag, delta: w - row.weight, weight: w });
-      } else if (related(tag)) {
-        // No exact interest, but a related one shares a word: train that one at reduced strength.
-        const rel = related(tag);
-        const room = 1 - Math.min(1, Math.abs(rel.weight) / L.maxWeight);
-        const delta = L.rate * score * relevance * 0.6 * (0.35 + 0.65 * room);
-        const w = clamp(rel.weight + delta, -L.maxWeight, L.maxWeight);
-        upd.run(w, positive, now(), userId, rel.tag);
-        rel.weight = w;
-        deltas.push({ tag: rel.tag, delta, weight: w });
+        upd.run(w, positive, now(), userId, own.tag);
+        own.weight = w;
+        deltas.push({ tag: own.tag, delta: w - row.weight, weight: w });
+        continue;
+      }
+      const rel = related(tag);
+      if (rel) {
+        // No interest in exactly this, but one on the same subject: train it at reduced strength.
+        const r = rel.row;
+        const room = 1 - Math.min(1, Math.abs(r.weight) / L.maxWeight);
+        const delta = L.rate * score * relevance * 0.6 * rel.strength * (0.35 + 0.65 * room);
+        const w = clamp(r.weight + delta, -L.maxWeight, L.maxWeight);
+        upd.run(w, positive, now(), userId, r.tag);
+        r.weight = w;
+        deltas.push({ tag: r.tag, delta, weight: w });
       } else if (score > 0.3 && relevance >= 0.5) {
-        // Only adopt brand-new tags when the clip clearly landed.
+        // Only adopt brand-new topics when the clip clearly landed.
         const w = L.rate * score * relevance;
         ins.run(userId, tag, w, positive, now());
+        all.push({ tag, weight: w }); byKey.set(topicKey(tag), all[all.length - 1]);
         deltas.push({ tag, delta: w, weight: w, isNew: true });
       }
     }

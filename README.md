@@ -85,14 +85,18 @@ GET  /api/feed?n=8              -> { items[{ impressionId, reason, embedKind, ex
 POST /api/events                { impressionId, type: progress|like|unlike|share|hide|skip|finish|broken, watchedMs, durationMs, replays }
 GET  /api/profile               POST /api/profile/refresh     POST /api/profile/interest { tag, action: boost|mute|remove }
 POST /api/import                { text | urls[] }   # paste Shorts / TikTok / Reels links
-GET  /api/search?q=&offset=     -> ranked catalog matches; a new query also starts live discovery
+GET  /api/search?q=&scope=strong|related  -> { total, ids (the whole ordered list), items (first page), discovery }
+POST /api/search/items          { q, ids }   # next page of that same list, by id
+POST /api/search/discover       { q }        # optional: fresh search on platforms that have budget
+POST /api/feed/steer            { impressionId, tag, direction: more|less, queue: [impressionId…] }
 GET  /api/search/suggest        GET /api/dashboard?tz=<minutes east of UTC>
 ```
 
 ## Tests
 
 ```bash
-npm test     # engagement scoring, ranker ordering, avoid-list filtering, heuristic profiling
+npm test     # scoring and ranking, plus relevance regressions on a fixed fixture catalog:
+             # search precision, quota exhaustion, explanation accuracy, steering a loaded queue
 ```
 
 ## Deploy (Netlify + Railway)

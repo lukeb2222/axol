@@ -3,7 +3,9 @@ import { db, q, uid, now, transaction } from "../db.js";
 import { config } from "../config.js";
 import { requireAuth } from "../auth.js";
 import { onboard, getProfile, maybeResynthesize } from "../profileService.js";
-import { loadUserModel, rankBatch, unseenCandidates } from "../ranker.js";
+import { unseenCandidates } from "../ranker.js";
+import { serveBatch, steerFeed, SteerError } from "../feedService.js";
+import { boostTopic, muteTopic, removeTopic } from "../preferences.js";
 import { runDiscovery, upsertVideos, tagPending, saveQueries } from "../ingest.js";
 import { learnFromImpression, safeTags } from "../learner.js";
 import { itemFromUrl, sourceStatus, SOURCES } from "../sources/index.js";
@@ -65,17 +67,7 @@ apiRouter.get("/feed", async (req, res) => {
     await Promise.race([runDiscovery(userId, { limit: 3, staleMs: 0 }), sleep(12000)]);
     candidates = unseenCandidates(userId);
   }
-  const model = loadUserModel(userId);
-  const picked = rankBatch(candidates, model, size);
-
-  const ins = db.prepare("INSERT INTO impressions (id, user_id, video_id, served_at, duration_ms, reason, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
-  const items = transaction(() =>
-    picked.map((p) => {
-      const id = uid();
-      ins.run(id, userId, p.video.id, now(), p.video.duration_ms, p.explanation, now());
-      return { impressionId: id, reason: p.explanation, score: round(p.total), ...publicVideo(p.video) };
-    }),
-  );
+  const items = serveBatch(userId, candidates, size);
   res.json({ items, poolSize: candidates.length, discovering: candidates.length < config.ranking.minPool, discoveryReady: !!config.youtubeApiKey || !!config.discoveryProviderUrl || apifyEnabled() });
 });
 
@@ -159,20 +151,31 @@ apiRouter.post("/profile/refresh", async (req, res) => {
 });
 
 apiRouter.post("/profile/interest", (req, res) => {
-  // Manual nudge from the profile screen: { tag, action: 'boost' | 'mute' | 'remove' }
+  // Manual nudge from the profile screen: { tag, action: 'boost' | 'mute' | 'remove' }.
+  // Each acts on the topic as a whole, whatever names it is stored under.
   const tag = String(req.body?.tag || "");
   const action = String(req.body?.action || "");
   if (!tag) return res.status(400).json({ error: "tag required" });
-  if (action === "remove") q.run("DELETE FROM interests WHERE user_id = ? AND tag = ?", req.user.id, tag);
-  else if (action === "boost") q.run("UPDATE interests SET weight = MIN(?, weight + 1), updated_at = ? WHERE user_id = ? AND tag = ?", config.learning.maxWeight, now(), req.user.id, tag);
-  else if (action === "mute") {
-    const prof = q.get("SELECT avoid_json FROM profiles WHERE user_id = ?", req.user.id);
-    const avoid = new Set(JSON.parse(prof?.avoid_json || "[]"));
-    avoid.add(tag);
-    q.run("UPDATE profiles SET avoid_json = ? WHERE user_id = ?", JSON.stringify([...avoid]), req.user.id);
-    q.run("DELETE FROM interests WHERE user_id = ? AND tag = ?", req.user.id, tag);
-  } else return res.status(400).json({ error: "unknown action" });
+  if (action === "remove") removeTopic(req.user.id, tag);
+  else if (action === "boost") boostTopic(req.user.id, tag);
+  else if (action === "mute") muteTopic(req.user.id, tag);
+  else return res.status(400).json({ error: "unknown action" });
   res.json({ profile: getProfile(req.user.id) });
+});
+
+/**
+ * Steer from the player's Why panel: { impressionId, tag, direction: 'more' | 'less', queue: [impressionId…] }.
+ * `queue` is what the player has loaded after the current clip; the response's `queue` replaces it.
+ * Pass replan: false to record the preference without touching a list (the search player).
+ */
+apiRouter.post("/feed/steer", (req, res) => {
+  try {
+    const b = req.body || {};
+    res.json(steerFeed(req.user.id, { impressionId: b.impressionId, tag: String(b.tag || ""), direction: String(b.direction || ""), queue: Array.isArray(b.queue) ? b.queue : [], replan: b.replan !== false }));
+  } catch (e) {
+    if (e instanceof SteerError) return res.status(400).json({ error: e.message });
+    throw e;
+  }
 });
 
 /* ------------------------------------- import ----------------------------------- */

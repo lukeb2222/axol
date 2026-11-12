@@ -3,10 +3,8 @@ import { Router } from "express";
 import { db, q, uid, now, transaction } from "../db.js";
 import { config } from "../config.js";
 import { safeTags, completionOf } from "../learner.js";
-import { loadUserModel, scoreVideo, PLAYABLE } from "../ranker.js";
-import { discoverTopic, topicStatus, saveQueries } from "../ingest.js";
-import { normalizeTag } from "../ai/taxonomy.js";
 import { publicVideo } from "../videoView.js";
+import { searchCatalog, hydrate, broaden, discoveryOptions } from "../search.js";
 
 export const insightsRouter = Router();
 
@@ -112,6 +110,23 @@ insightsRouter.get("/dashboard", (req, res) => {
 
 /* ------------------------------------ search ------------------------------------ */
 
+/**
+ * GET /search?q=…&scope=strong|related&refresh=1
+ * Catalog results only. `ids` is the full ordered result list, `total` its length, `items` its
+ * first page. `refresh=1` re-reads a search already made without recording it as a new interest.
+ */
+insightsRouter.get("/search", (req, res) => {
+  const raw = String(req.query.q || "").trim().slice(0, 80);
+  if (raw.replace(/[^a-z0-9]/gi, "").length < 2) return res.status(400).json({ error: "type a topic to search" });
+  const scope = req.query.scope === "related" ? "related" : "strong";
+  res.json(searchCatalog(req.user.id, raw, { scope, n: Math.min(24, Number(req.query.n) || 18), remember: req.query.refresh !== "1" }));
+});
+
+/** POST /search/items { q, ids } — the next page of a result list, by id, so paging can never drift from it. */
+insightsRouter.post("/search/items", (req, res) => {
+  res.json({ items: hydrate(req.user.id, String(req.body?.q || "").slice(0, 80), Array.isArray(req.body?.ids) ? req.body.ids : []) });
+});
+
 const liveSearches = new Map(); // userId -> timestamps, to keep one person from draining shared quota
 function allowLive(userId) {
   const t = now();
@@ -120,75 +135,13 @@ function allowLive(userId) {
   list.push(t); liveSearches.set(userId, list);
   return true;
 }
-const stem = (w) => (w.length > 3 ? w.replace(/(ies)$/, "y").replace(/(ing|s)$/, "") : w);
 
-insightsRouter.get("/search", async (req, res) => {
-  const userId = req.user.id;
-  const raw = String(req.query.q || "").trim().slice(0, 80);
-  const offset = Math.max(0, Number(req.query.offset) || 0);
-  const n = Math.min(24, Number(req.query.n) || 18);
-  const words = raw.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(/\s+/).filter((w) => w.length > 1).slice(0, 6);
-  if (!words.length) return res.status(400).json({ error: "type a topic to search" });
-  const phraseTag = normalizeTag(raw);
-  const stems = words.map(stem);
-
-  // A search is a statement of interest: remember it and keep discovering it.
-  // `refresh` re-reads results for a search already made (more pages, late-arriving platforms)
-  // without counting it as a new statement of interest or starting new discovery.
-  const refresh = req.query.refresh === "1";
-  let discovery = { started: 0, ...topicStatus(raw) };
-  if (offset === 0 && !refresh) {
-    const row = q.get("SELECT weight FROM interests WHERE user_id = ? AND tag = ?", userId, phraseTag);
-    if (row) q.run("UPDATE interests SET weight = MIN(?, weight + 0.3), updated_at = ? WHERE user_id = ? AND tag = ?", config.learning.maxWeight, now(), userId, phraseTag);
-    else q.run("INSERT INTO interests (user_id, tag, weight, impressions, positive, origin, updated_at) VALUES (?, ?, 0.8, 0, 0, 'search', ?)", userId, phraseTag, now());
-    saveQueries(userId, { youtube: [`${raw.toLowerCase()} shorts`], tiktok: [raw.toLowerCase()], instagram: [raw.toLowerCase()] });
-    if (allowLive(userId)) discovery = await discoverTopic(raw).catch(() => discovery);
-  }
-
-  // Match the catalog on tags, the query that found the clip, and the title.
-  const like = stems.map(() => "(LOWER(v.title) LIKE ? OR v.tags_json LIKE ? OR LOWER(v.query) LIKE ?)").join(" OR ");
-  const params = stems.flatMap((s) => [`%${s}%`, `%${s}%`, `%${s}%`]);
-  const candidates = q.all(`SELECT v.* FROM videos v WHERE v.tagged = 1 AND ${PLAYABLE} AND (${like}) ORDER BY v.created_at DESC LIMIT 800`, ...params);
-  const model = loadUserModel(userId);
-  const scored = [];
-  for (const v of candidates) {
-    const tags = safeTags(v.tags_json);
-    if (tags.some((t) => model.avoid.has(t.tag))) continue;
-    const title = v.title.toLowerCase(), query = v.query.toLowerCase();
-    let s = 0, hits = 0;
-    for (const st of stems) {
-      let hit = false;
-      for (const t of tags) if (t.tag.split("-").some((part) => stem(part) === st)) { s += 2 * t.relevance; hit = true; }
-      if (query.includes(st)) { s += 1.5; hit = true; }
-      if (title.includes(st)) { s += 1; hit = true; }
-      if (hit) hits++;
-    }
-    if (!hits) continue;
-    if (tags.some((t) => t.tag === phraseTag)) s += 3;
-    s *= hits / stems.length; // prefer clips matching every word
-    const fit = scoreVideo(v, model, { rand: () => 0.5 });
-    scored.push({ v, s: s + 0.15 * (fit?.match || 0) });
-  }
-  scored.sort((a, b) => b.s - a.s);
-
-  // Light creator diversity so one account does not fill the grid.
-  const seenCreators = new Map(), ordered = [];
-  for (const c of scored) {
-    const k = c.v.creator || c.v.id, count = seenCreators.get(k) || 0;
-    seenCreators.set(k, count + 1);
-    ordered.push({ ...c, s: c.s - count * 0.8 });
-  }
-  ordered.sort((a, b) => b.s - a.s);
-  const page = ordered.slice(offset, offset + n);
-
-  const ins = db.prepare("INSERT INTO impressions (id, user_id, video_id, served_at, duration_ms, reason, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
-  const reason = `You searched ${raw}`;
-  const items = transaction(() => page.map(({ v }) => {
-    const id = uid();
-    ins.run(id, userId, v.id, now(), v.duration_ms, reason, now());
-    return { impressionId: id, reason, ...publicVideo(v) };
-  }));
-  res.json({ q: raw, items, total: ordered.length, hasMore: offset + n < ordered.length, pending: discovery.pending, paused: discovery.paused });
+/** POST /search/discover { q } — the optional "look for fresh clips on the platforms" action. */
+insightsRouter.post("/search/discover", async (req, res) => {
+  const raw = String(req.body?.q || "").trim().slice(0, 80);
+  if (raw.replace(/[^a-z0-9]/gi, "").length < 2) return res.status(400).json({ error: "type a topic to search" });
+  if (!allowLive(req.user.id)) return res.json({ started: [], limited: true, ...discoveryOptions(raw) });
+  res.json(await broaden(req.user.id, raw));
 });
 
 insightsRouter.get("/search/suggest", (req, res) => {

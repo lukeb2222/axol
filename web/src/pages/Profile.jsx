@@ -54,7 +54,8 @@ export default function Profile({ user, onLogout }) {
           <div className="bars">
             {p.interests.slice(0, 30).map((i) => (
               <div className="bar" key={i.tag}>
-                <div className="lbl">{i.tag.replace(/-/g, " ")}<span className={`badge ${i.origin}`}>{i.origin}</span></div>
+                <div className="lbl">{i.tag.replace(/-/g, " ")}<span className={`badge ${i.origin}`}>{i.origin === "asked" ? "you asked" : i.origin}</span>
+                  {i.aliases?.length > 0 && <span className="tiny" title={`Also stored as: ${i.aliases.map((a) => a.replace(/-/g, " ")).join(", ")}`}>+{i.aliases.length} same topic</span>}</div>
                 <div className="row" style={{ gap: 6 }}>
                   <span className="tiny">{i.impressions} seen</span>
                   <button className="mini" onClick={() => act(i.tag, "boost")}>▲</button>

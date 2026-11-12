@@ -4,6 +4,7 @@ import { config } from "./config.js";
 import { buildInitialProfile, resynthesize } from "./ai/profile.js";
 import { saveQueries, runDiscovery } from "./ingest.js";
 import { safeTags, completionOf, clamp } from "./learner.js";
+import { groupedInterests } from "./preferences.js";
 
 const W_SCALE = 2.5; // onboarding weight (0-1) -> internal weight
 
@@ -47,7 +48,7 @@ export function getProfile(userId) {
     avoid: JSON.parse(prof?.avoid_json || "[]"),
     eventsSinceSynth: prof?.events_since_synth || 0,
     synthCount: prof?.synth_count || 0,
-    interests,
+    interests: groupedInterests(interests),
     stats,
     sources,
     log,

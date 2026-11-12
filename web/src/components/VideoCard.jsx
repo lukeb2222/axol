@@ -12,7 +12,7 @@ const ASSUMED_EMBED_MS = 20000; // typical short clip when the platform hides du
 const PROGRESS_EVERY_MS = 2000;
 const LABEL = { youtube: "Shorts", tiktok: "TikTok", instagram: "Reels" };
 
-export default function VideoCard({ item, active, near, prewarm, warm, soundOn, needsGesture, paused, next, onFinished, onHide, onWantSound, onSoundBlocked, onBroken, onAlive, showHint }) {
+export default function VideoCard({ item, active, near, prewarm, warm, soundOn, needsGesture, paused, next, onFinished, onHide, onWantSound, onSoundBlocked, onBroken, onAlive, onSteer, showHint }) {
   // axol's own player whenever the server holds the file; the platform's embed otherwise.
   const [nativeFailed, setNativeFailed] = useState(false);
   const kind = item.videoUrl && !nativeFailed ? "native" : item.embedKind;
@@ -21,6 +21,21 @@ export default function VideoCard({ item, active, near, prewarm, warm, soundOn, 
   const [userPaused, setUserPaused] = useState(false);
   const [progress, setProgress] = useState(0);
   const [showInfo, setShowInfo] = useState(false);
+  // The short label and the Why panel read the same object, so they cannot disagree.
+  const why = item.why || { label: item.reason, detail: "", clipTopics: [] };
+  const topics = item.topics || [];
+  const [steer, setSteer] = useState({ busy: "", done: {}, message: "" });
+  const doSteer = async (topic, direction) => {
+    if (!onSteer || steer.busy) return;
+    setSteer((s) => ({ ...s, busy: `${direction}:${topic.tag}` }));
+    try {
+      const res = await onSteer(item, topic.tag, direction);
+      setSteer((s) => ({ busy: "", done: { ...s.done, [topic.tag]: direction }, message: res?.message || "" }));
+    } catch (e) {
+      setSteer((s) => ({ ...s, busy: "", message: e.message || "That didn't go through. Try again." }));
+    }
+  };
+  useEffect(() => { if (!active) setShowInfo(false); }, [active]);
   const [playing, setPlaying] = useState(false);         // first frame is on screen → poster fades out
   const [embedControllable, setControllable] = useState(false); // TikTok's player, once it answers
   const controllable = kind === "native" || kind === "youtube" || embedControllable;
@@ -214,11 +229,35 @@ export default function VideoCard({ item, active, near, prewarm, warm, soundOn, 
       {showHint && !broken && <div className="hint"><span>▲</span>swipe up for the next one</div>}
 
       <div className="meta">
-        <span className="reason">✦ {item.reason}</span>
+        <span className="reason">✦ {why.label}</span>
         <div className="row"><span className={`srcpill ${item.source}`}>{LABEL[item.source] || item.source}</span>{item.creator && <span className="creator">{item.creator}</span>}</div>
         {item.title && <div className="title">{item.title}</div>}
-        {showInfo && <div className="tags">{(item.tags || []).map((t) => <span key={t} className="tag">#{t}</span>)}</div>}
-        {active && next && progress > 0.8 && <div className="upnext">Up next · {next.reason}<span>▲</span></div>}
+        {showInfo && (
+          <div className="whypanel" role="dialog" aria-label="Why this clip">
+            <div className="why-head">Why this clip</div>
+            <div className="why-label">{why.label}</div>
+            {why.detail && <p className="why-detail">{why.detail}</p>}
+            {topics.length > 0 && onSteer && (
+              <>
+                <div className="why-head">Steer your next clips</div>
+                {topics.map((t) => (
+                  <div className="steer-row" key={t.tag}>
+                    <button className={`steer more ${steer.done[t.tag] === "more" ? "on" : ""}`} disabled={!!steer.busy} onClick={() => doSteer(t, "more")}>
+                      {steer.busy === `more:${t.tag}` ? <span className="spin light" /> : "＋"} More {t.label}
+                    </button>
+                    <button className={`steer less ${steer.done[t.tag] === "less" ? "on" : ""}`} disabled={!!steer.busy} onClick={() => doSteer(t, "less")}>
+                      {steer.busy === `less:${t.tag}` ? <span className="spin light" /> : "−"} Less {t.label}
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+            {steer.message && <div className="steer-msg" role="status">{steer.message}</div>}
+          </div>
+        )}
+        {/* The teaser names the next clip's subject. It never borrows the next clip's "Because…"
+            line, which would read as a claim about the clip on screen. */}
+        {active && next && progress > 0.8 && !showInfo && <div className="upnext">Up next · {next.topics?.[0]?.label || LABEL[next.source] || "another clip"}<span>▲</span></div>}
       </div>
 
       <div className="rail">

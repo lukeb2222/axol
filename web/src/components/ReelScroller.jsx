@@ -15,7 +15,7 @@ const easeOutQuart = (t) => 1 - Math.pow(1 - t, 4);
  * The clip under the viewport's midpoint is active; its neighbours are mounted and the next one is
  * buffered ahead of time, so a swipe lands on moving video rather than a spinner.
  */
-export default function ReelScroller({ items, onNeedMore, onRemove, paused, startIndex = 0, overlay, onClose, title, tail, right }) {
+export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, paused, startIndex = 0, overlay, onClose, title, tail, right }) {
   const [active, setActive] = useState(startIndex);
   const [soundOn, setSoundOn] = useState(sound.on);
   // Browsers refuse to start video with sound until the viewer has interacted with the page.
@@ -166,6 +166,16 @@ export default function ReelScroller({ items, onNeedMore, onRemove, paused, star
 
   const onSoundBlocked = useCallback(() => setNeedsGesture(true), []);
 
+  // "More …" / "Less …" from a clip's Why panel. The clips loaded after that clip are sent along
+  // so the server can re-plan exactly those; the clip itself keeps playing untouched.
+  const steer = useCallback(async (item, tag, direction) => {
+    const list = live.current.items;
+    const idx = list.findIndex((i) => i.impressionId === item.impressionId);
+    const res = await onSteer({ impressionId: item.impressionId, tag, direction, queue: idx < 0 ? [] : list.slice(idx + 1).map((i) => i.impressionId) });
+    if (res?.message) pushToast({ big: true, text: res.message });
+    return res;
+  }, [onSteer, pushToast]);
+
   // An unplayable clip ahead of the viewer is dropped before they reach it; one they are
   // already on is skipped after a moment so they can see why.
   // If one platform's player fails three times running (it is rate-limiting or blocked on this
@@ -194,7 +204,7 @@ export default function ReelScroller({ items, onNeedMore, onRemove, paused, star
           <div key={item.impressionId} className="slide-wrap">
             <VideoCard item={item} active={idx === active && !paused} near={Math.abs(idx - active) === 1} prewarm={idx === active + 1 && !paused} warm={idx === active + 2 && !paused}
               soundOn={soundOn} needsGesture={needsGesture} paused={paused} next={items[idx + 1]}
-              onFinished={onFinished} onHide={onRemove} onWantSound={wantSound} onSoundBlocked={onSoundBlocked} onBroken={onBroken} onAlive={onAlive} showHint={hint && idx === 0} />
+              onFinished={onFinished} onHide={onRemove} onWantSound={wantSound} onSoundBlocked={onSoundBlocked} onBroken={onBroken} onAlive={onAlive} onSteer={onSteer ? steer : undefined} showHint={hint && idx === 0} />
           </div>
         ))}
         {/* The loading card is deliberately not a snap point: browsers keep following whichever

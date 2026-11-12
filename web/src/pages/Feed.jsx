@@ -42,6 +42,19 @@ export default function Feed({ paused }) {
   }, [empty, discoveryReady, fetchMore, items.length]);
 
   const onRemove = useCallback((impressionId) => setItems((prev) => prev.filter((i) => i.impressionId !== impressionId)), []);
+
+  // Steering re-plans only what comes after the clip it was tapped on. Everything up to and
+  // including that clip is kept exactly as it is, so the video on screen is never interrupted.
+  const onSteer = useCallback(async (payload) => {
+    const res = await api.steer(payload);
+    if (Array.isArray(res.queue)) {
+      setItems((prev) => {
+        const idx = prev.findIndex((i) => i.impressionId === payload.impressionId);
+        return idx < 0 ? prev : [...prev.slice(0, idx + 1), ...res.queue];
+      });
+    }
+    return res;
+  }, []);
   const retry = () => { setEmpty(false); setLoading(true); fetchMore(); };
   const doImport = async () => {
     setImporting(true);
@@ -77,5 +90,5 @@ export default function Feed({ paused }) {
     </div>
   );
 
-  return <ReelScroller items={items} onNeedMore={fetchMore} onRemove={onRemove} paused={paused} tail={tail} />;
+  return <ReelScroller items={items} onNeedMore={fetchMore} onRemove={onRemove} onSteer={onSteer} paused={paused} tail={tail} />;
 }

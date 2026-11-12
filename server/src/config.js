@@ -73,6 +73,7 @@ export const config = {
     diversityPenalty: 0.3,
     noise: 0.08,
     instantBonus: 0.25,
+    explainMinMatch: 0.25,  // below this, interest fit did not really pick the clip: call it discovery
     minPool: 12,         // trigger discovery when unseen pool is smaller than this
     queryCacheMs: 24 * 3600e3, // a query run by anyone within this window is not re-run for someone else
   },

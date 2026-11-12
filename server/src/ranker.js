@@ -2,65 +2,101 @@
 import { q } from "./db.js";
 import { config } from "./config.js";
 import { safeTags } from "./learner.js";
+import { topicKey, contentWords, relate, isAbout, isFormatTag, prettyTopic, prettyShared, steerableTopics } from "./topics.js";
 
 const R = config.ranking;
+const MAXW = config.learning.maxWeight;
 
 export function loadUserModel(userId) {
-  const interests = new Map();
-  for (const r of q.all("SELECT tag, weight, impressions FROM interests WHERE user_id = ?", userId)) interests.set(r.tag, r);
-  const avoid = new Set(JSON.parse(q.get("SELECT avoid_json FROM profiles WHERE user_id = ?", userId)?.avoid_json || "[]"));
+  const rows = q.all("SELECT tag, weight, impressions, positive, origin FROM interests WHERE user_id = ?", userId);
+  const avoid = JSON.parse(q.get("SELECT avoid_json FROM profiles WHERE user_id = ?", userId)?.avoid_json || "[]");
   const totalViews = q.get("SELECT COUNT(*) AS n FROM impressions WHERE user_id = ? AND finalized = 1", userId)?.n || 0;
   const sourceAff = new Map();
   for (const r of q.all("SELECT source, views, score_sum FROM source_affinity WHERE user_id = ?", userId)) {
     sourceAff.set(r.source, r.views ? r.score_sum / r.views : 0);
   }
-  return { interests, avoid, totalViews, sourceAff, tokenIndex: buildTokenIndex(interests) };
+  return buildModel({ interests: rows, avoid, totalViews, sourceAff });
 }
 
-// Interests and clip tags come from different AI calls, so "specialty-coffee" and "coffee"
-// must still recognize each other. Index each interest by its meaningful words.
-const STOP = new Set(["and", "the", "for", "with", "how", "to", "of", "in", "a", "shorts", "short", "video", "videos", "tutorial", "tips", "learning", "music", "food", "home", "diy"]);
-const tokens = (tag) => tag.split("-").filter((t) => t.length > 2 && !STOP.has(t));
-export function buildTokenIndex(interests) {
-  const idx = new Map();
-  for (const [tag, it] of interests) {
-    for (const tok of tokens(tag)) {
-      const cur = idx.get(tok);
-      // Keep the strongest signal per word, by magnitude, so dislikes carry over too.
-      if (!cur || Math.abs(it.weight) > Math.abs(cur.weight)) idx.set(tok, { tag, weight: it.weight, impressions: it.impressions });
+const ORIGIN_RANK = { onboarding: 4, search: 3, asked: 3, learned: 2, ai: 1 };
+
+/**
+ * Build the in-memory model the ranker scores against (exported so tests can make one directly).
+ * Interest rows that name the same topic ("motocross-big-air", "big-air-motocross") are merged
+ * into one entry, so they count once and are explained under one name.
+ */
+export function buildModel({ interests = [], avoid = [], totalViews = 0, sourceAff = new Map() } = {}) {
+  const byKey = new Map();
+  for (const r of interests) {
+    const key = topicKey(r.tag);
+    if (!key) continue;
+    const cur = byKey.get(key);
+    if (!cur) { byKey.set(key, { key, tag: r.tag, weight: r.weight, impressions: r.impressions || 0, positive: r.positive || 0, origin: r.origin || "learned", top: Math.abs(r.weight) }); continue; }
+    cur.weight = Math.max(-MAXW, Math.min(MAXW, cur.weight + r.weight));
+    cur.impressions += r.impressions || 0;
+    cur.positive += r.positive || 0;
+    if ((ORIGIN_RANK[r.origin] || 0) > (ORIGIN_RANK[cur.origin] || 0)) cur.origin = r.origin;
+    if (Math.abs(r.weight) > cur.top) { cur.top = Math.abs(r.weight); cur.tag = r.tag; } // name it after its strongest row
+  }
+  // Subject word -> interests containing it, for finding genuinely related topics.
+  const byWord = new Map();
+  for (const it of byKey.values()) for (const w of contentWords(it.tag)) (byWord.get(w) || byWord.set(w, []).get(w)).push(it);
+  return { interests: byKey, byWord, avoid: [...new Set(avoid)], avoidKeys: new Set(avoid.map(topicKey)), totalViews, sourceAff };
+}
+
+const PARTIAL = 0.6; // a related topic counts for at most 60% of the same topic
+
+/**
+ * The viewer interest a clip tag connects to, if any.
+ *   - the same topic (after canonicalization) at full strength, or
+ *   - the strongest interest sharing a SUBJECT word with it, scaled by how much they overlap.
+ * Format words never connect two topics: "coffee-pov" does not match "motocross-rider-pov".
+ */
+export function lookupInterest(tag, model) {
+  const exact = model.interests.get(topicKey(tag));
+  if (exact) return { interest: exact, kind: "same", factor: 1, shared: contentWords(tag).length ? contentWords(tag) : null };
+  let best = null;
+  const seen = new Set();
+  for (const w of contentWords(tag)) {
+    for (const it of model.byWord.get(w) || []) {
+      if (seen.has(it.key)) continue;
+      seen.add(it.key);
+      const rel = relate(it.tag, tag);
+      if (!rel) continue;
+      const factor = PARTIAL * rel.strength;
+      if (!best || Math.abs(it.weight * factor) > Math.abs(best.interest.weight * best.factor)) best = { interest: it, kind: "related", factor, shared: rel.shared, strength: rel.strength };
     }
   }
-  return idx;
+  return best;
 }
-const PARTIAL = 0.6; // a related-word match counts for 60% of an exact one
-/** Exact interest for a clip tag, or the best related one by shared word. */
-export function lookupInterest(tag, model) {
-  const exact = model.interests.get(tag);
-  if (exact) return { ...exact, tag, factor: 1 };
-  if (!model.tokenIndex) return null;
-  let best = null;
-  for (const tok of tokens(tag)) {
-    const hit = model.tokenIndex.get(tok);
-    if (hit && (!best || Math.abs(hit.weight) > Math.abs(best.weight))) best = hit;
-  }
-  return best ? { ...best, factor: PARTIAL } : null;
+
+/** True when the viewer has muted this clip's subject. */
+export function isAvoided(tags, model) {
+  if (!model.avoid.length) return false;
+  return tags.some((t) => model.avoidKeys.has(topicKey(t.tag)) || model.avoid.some((a) => isAbout(t.tag, a)));
 }
 
 /** Pure scoring function (exported for tests). */
 export function scoreVideo(video, model, { rand = Math.random } = {}) {
   const tags = safeTags(video.tags_json);
-  if (tags.some((t) => model.avoid.has(t.tag) || avoidsRelated(t.tag, model.avoid))) return null;
+  if (isAvoided(tags, model)) return null;
   let relSum = 0, match = 0, explore = 0;
+  const links = [];
   for (const { tag, relevance } of tags) {
     relSum += relevance;
-    const it = lookupInterest(tag, model);
-    if (it) match += it.weight * it.factor * relevance;
+    const hit = lookupInterest(tag, model);
+    if (hit) {
+      const value = hit.interest.weight * hit.factor * relevance;
+      match += value;
+      links.push({ ...hit, clipTag: tag, relevance, value });
+    }
     // UCB-style bonus: tags the user has rarely been shown are worth testing.
-    const n = it?.impressions || 0;
+    const n = hit?.interest.impressions || 0;
     explore += relevance * Math.sqrt(Math.log(model.totalViews + 2) / (n + 1));
   }
   const norm = Math.max(1, relSum);
   match /= norm;
+  for (const l of links) l.value /= norm;
   explore = (explore / norm) * R.exploreWeight;
   const ageDays = (Date.now() - video.created_at) / 86400e3;
   const freshness = Math.exp(-ageDays / 14) * R.freshnessWeight;
@@ -68,9 +104,48 @@ export function scoreVideo(video, model, { rand = Math.random } = {}) {
   const noise = gumbel(rand) * R.noise;
   // A clip axol holds the file for starts instantly and always plays; an embed may not.
   const instant = video.media_file ? R.instantBonus : 0;
-  const explanation = topReason(tags, model);
-  return { total: match + explore + freshness + sourceBonus + noise + instant, match, explore, explanation };
+  const why = explain({ tags, links, match, explore });
+  return { total: match + explore + freshness + sourceBonus + noise + instant, match, explore, why, explanation: why.label };
 }
+
+export const DISCOVERY_LABEL = "Something new, to see if it lands";
+
+/**
+ * Why was THIS clip picked? Built from the terms that actually produced its score, so the label
+ * can only claim a connection that exists on both sides:
+ *   - the viewer's side: an interest they have really watched (or explicitly asked for), and
+ *   - the clip's side: a tag, relevant to the clip, that is that topic or contains it.
+ * Anything weaker is a discovery pick and says so.
+ */
+export function explain({ tags, links, match, explore }) {
+  const clipTopics = steerableTopics(tags).map((t) => t.label);
+  const discovery = (detail) => ({ kind: "discovery", label: DISCOVERY_LABEL, topic: null, detail, clipTopics });
+  const top = links.filter((l) => l.value > 0).sort((a, b) => b.value - a.value)[0];
+  if (!top) return discovery("This is a test pick. Nothing you've watched so far points to it.");
+
+  const it = top.interest;
+  // What the two sides have in common, in words: the topic itself, or the overlap.
+  const topic = top.kind === "same" ? prettyTopic(it.tag) : prettyShared(top.shared, it.tag, top.clipTag);
+  const clipSupports = top.relevance >= 0.5 && (top.kind === "same" || top.strength >= 1) && !isFormatOnly(top);
+  const drivesTheScore = match >= R.explainMinMatch && top.value >= match * 0.5 && match >= explore * 0.5;
+  if (!clipSupports || !drivesTheScore) {
+    return discovery(`This is a test pick. It is only loosely connected to ${prettyTopic(it.tag)}, so axol is checking whether it lands.`);
+  }
+  const tagged = `this clip is about ${prettyTopic(top.clipTag)}`;
+  if (it.positive >= 1) {
+    const n = it.positive;
+    return { kind: "watch", label: `Because you watch ${topic}`, topic: it.tag, clipTopics,
+      detail: `You've watched ${n} ${topic} clip${n === 1 ? "" : "s"} most of the way through, and ${tagged}.` };
+  }
+  if (it.origin === "onboarding" || it.origin === "search" || it.origin === "asked") {
+    const source = it.origin === "onboarding" ? "in your intro" : it.origin === "search" ? "by searching for it" : "with a More tap";
+    return { kind: "asked", label: `Because you asked for ${topic}`, topic: it.tag, clipTopics,
+      detail: `You told axol you want ${topic} ${source}, and ${tagged}. You haven't watched one through yet.` };
+  }
+  // An interest axol guessed and the viewer has never confirmed is not "because you watch".
+  return discovery(`axol guessed you might like ${topic}. Nothing you've watched confirms that yet, so this is a test.`);
+}
+const isFormatOnly = (link) => link.kind === "same" && isFormatTag(link.clipTag) && link.interest.positive < 2;
 
 /** Pick a batch with greedy diversity: penalize repeating the same tags/creators. */
 export function rankBatch(candidates, model, size = R.batchSize, opts = {}) {
@@ -100,10 +175,12 @@ export function rankBatch(candidates, model, size = R.batchSize, opts = {}) {
     picked.push(chosen);
   }
   // Variable reward: occasionally slot a pure-exploration pick a few cards in.
-  if (picked.length >= 4 && scored.length && Math.random() < 0.6) {
+  if (opts.wild !== false && picked.length >= 4 && scored.length && Math.random() < 0.6) {
     scored.sort((a, b) => b.explore - a.explore);
     const wild = scored[0];
-    wild.explanation = "Something new, to see if it lands";
+    wild.why = { kind: "discovery", label: DISCOVERY_LABEL, topic: null, clipTopics: wild.why.clipTopics,
+      detail: "This is a test pick, chosen because you've seen little like it. How long you watch tells axol whether to show more." };
+    wild.explanation = wild.why.label;
     picked.splice(3, 0, wild);
     if (picked.length > size) picked.pop();
   }
@@ -123,28 +200,6 @@ export function unseenCandidates(userId, limit = 400) {
      ORDER BY v.created_at DESC LIMIT ?`,
     userId, Date.now() - 30 * 60e3, limit,
   );
-}
-
-const stem = (w) => w.replace(/s$/, "");
-function avoidsRelated(tag, avoid) {
-  if (!avoid.size) return false;
-  const toks = new Set(tokens(tag).map(stem));
-  for (const a of avoid) {
-    const at = tokens(a).map(stem);
-    if (at.length && at.every((x) => toks.has(x))) return true;
-  }
-  return false;
-}
-
-function topReason(tags, model) {
-  let best = null;
-  for (const t of tags) {
-    const it = lookupInterest(t.tag, model);
-    const s = it ? it.weight * it.factor * t.relevance : 0;
-    if (s > 0 && (!best || s > best.s)) best = { tag: it.tag, s };
-  }
-  if (best) return `Because you watch ${best.tag.replace(/-/g, " ")}`;
-  return tags[0] ? `Trying ${tags[0].tag.replace(/-/g, " ")}` : "Fresh pick";
 }
 
 function gumbel(rand) {

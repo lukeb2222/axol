@@ -119,11 +119,8 @@ noise     = 0.08 · Gumbel()                                        # stochastic
 total     = match + explore + freshness + platform + noise
 ```
 
-**Related-word matching.** Interests and clip tags are written by separate AI calls, so
-"specialty-coffee" (profile) and "coffee" (clip) must still meet. When a clip tag has no exact
-interest, the ranker looks for an interest sharing a meaningful word and counts it at 60 % strength;
-the learner trains that related interest at the same reduced strength, and an avoided topic such as
-"pranks" also blocks "prank-videos".
+**Topic matching.** A clip tag counts toward `match` when it is the same topic as an interest, or a
+related one sharing a subject word (see section 9). Format words never link two topics.
 
 Batch assembly is **greedy with a diversity penalty**: after each pick, any candidate sharing one of
 its top-3 tags loses `0.3 × relevance` per repeat, and the same creator loses `0.45` per repeat.
@@ -152,20 +149,74 @@ the skateboarding interest is really about *filmmaking*, or that a stated intere
 every time. Fallback re-synthesis compares each tag's mean completion to the user's average and
 nudges accordingly.
 
-## 9. Search as a signal (`server/src/routes/insights.js`)
+## 9. Topics: one vocabulary for search, ranking, explanations and steering (`server/src/topics.js`)
 
-A search is the most explicit statement of interest a viewer can make, so it feeds the same model:
-the searched topic is added as an interest at weight 0.8 (or nudged +0.3 if already present, origin
-`search`), saved as discovery queries on all three platforms, and run live if nobody has searched it
-in the last 24 hours. Results are ranked by tag, query and title matches (every word must match for
-full credit), with a small bonus for the viewer's own interest fit and a penalty for repeating a
-creator. Watching a search result is an ordinary impression and trains the profile like any other.
+Interest names and clip tags are written by different AI calls, so the engine needs one definition
+of "the same topic" and of "a real overlap":
+
+- **Canonical identity.** `topicKey` stems each word and ignores order and filler, so
+  `motocross-big-air` and `big-air-motocross` are one topic. The ranker merges such rows into one
+  entry, the profile shows them as one control, and every write (boost, less, mute, learning) lands
+  on the viewer's existing row for that topic.
+- **Subject words versus format words.** Words such as `pov`, `tutorial`, `highlight`, `tricks`,
+  `freestyle`, `satisfying` describe how a clip is made, not what it is about. Two topics are
+  *related* only if they share a subject word (`specialty-coffee` and `coffee-making` share
+  "coffee"); a shared format word links nothing (`coffee-pov` and `motocross-rider-pov` do not match).
+  Related topics count at up to 60 % of an exact match, scaled by how much they overlap.
+
+## 10. Search (`server/src/search.js`)
+
+A result must match the meaning of the whole query in the clip's **own** metadata.
+
+1. The query is reduced to its meaningful words, stemmed (`skiing` -> `ski`), and matched as whole
+   words. A substring is not a match: "ski" does not hit "basketballskills".
+2. Each word is looked for in the clip's tags (strongest evidence), caption/title, and description.
+   The search that originally fetched the clip counts only as a weak hint, never as a match.
+3. Each word is weighted by how specific it is within the catalog (inverse document frequency):
+   "freestyle" appears in BMX, rap and skiing clips, "skiing" in few.
+4. **Results** are clips matching every word (a long query may miss one minor word). The heading's
+   count is the length of this list, and the grid and the swipeable player page through the same
+   ordered ids, so they cannot disagree.
+5. **Related** clips match the query's most specific word but not all of it. They are never mixed
+   into the results; the screen offers them separately.
+6. **Fresh discovery is explicit.** Searching never spends platform quota by itself. A separate
+   action runs a live search where budget allows; when a platform's daily budget is spent the screen
+   says so. Whatever is fetched is shown only if it passes steps 1-4 like everything else.
+
+A search still records the topic as an interest (0.8, or +0.3 if present) and saves discovery
+queries, so the feed's own discovery cadence looks for it later.
+
+## 11. Explanations (`server/src/ranker.js -> explain`)
+
+Each clip's explanation is built from the terms that actually produced its score, and the short
+label and the Why panel are the same object. "Because you watch X" requires both sides:
+
+- **the viewer's side:** an interest they have watched through at least once, and
+- **the clip's side:** a tag relevant to the clip (>= 0.5) that is that topic, or contains it,
+
+and the interest fit must be what selected the clip (not exploration or freshness). The label names
+the common ground, so `specialty-coffee` + a clip tagged `coffee` reads "Because you watch coffee".
+An interest the viewer stated but has not watched reads "Because you asked for X". Everything
+weaker, including interests axol only guessed, uses the discovery label.
+
+## 12. Steering from the player (`server/src/feedService.js -> steerFeed`)
+
+The Why panel offers "More X" / "Less X" for the subjects that describe the clip on screen.
+
+- **More** is the profile's boost (+1, lifting a turned-down topic back above zero), and creates the
+  interest if the viewer had none. **Less** is a lasting down-weight (to at most -1.5). It is
+  deliberately not mute: mute removes a topic entirely and stays on the profile screen.
+- The clips already loaded *after* the current one are re-planned at once; the current clip is not
+  touched. Less swaps every queued clip about the topic for the best clip that is not. More places
+  up to two clips about the topic within the next three, taken first from further down the queue.
+- The response states what actually changed. If nothing matching is in stock, the app says the wish
+  was noted rather than implying an immediate match.
 
 Clips a platform refuses to play are closed at a neutral score, so they never count as a skip. A
 definitive verdict from the platform (removed, private, embedding disabled) retires the clip for
 everyone.
 
-## 10. Safeguards and controls
+## 13. Safeguards and controls
 
 - `avoid` tags are hard filters at ranking time; users can mute, boost, or remove any interest.
 - Weights saturate softly and decay globally, so no single interest can permanently dominate.

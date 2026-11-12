@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 process.env.AXOL_DB_PATH = ":memory:";
 process.env.AXOL_DISABLE_AI = "1";
 const { engagementScore } = await import("../src/learner.js");
-const { scoreVideo, rankBatch, buildTokenIndex } = await import("../src/ranker.js");
+const { scoreVideo, rankBatch, buildModel } = await import("../src/ranker.js");
 const { heuristicInitial } = await import("../src/ai/profile.js");
 
 test("engagement: quick skip is strongly negative", () => {
@@ -19,7 +19,7 @@ test("engagement: ~45% watch is neutral", () => {
   assert.ok(Math.abs(engagementScore({ watched_ms: 13500, duration_ms: 30000 })) < 0.05);
 });
 test("ranker: matching interests outrank non-matching, avoid list filters", () => {
-  const model = { interests: new Map([["skateboarding", { weight: 3, impressions: 10 }]]), avoid: new Set(["politics"]), totalViews: 20, sourceAff: new Map() };
+  const model = buildModel({ interests: [{ tag: "skateboarding", weight: 3, impressions: 10, positive: 5 }], avoid: ["politics"], totalViews: 20 });
   const mk = (tags) => ({ id: tags.join(), tags_json: JSON.stringify(tags.map((t) => ({ tag: t, relevance: 1 }))), created_at: Date.now(), source: "youtube", embed_kind: "youtube", creator: "" });
   const rand = () => 0.5;
   const a = scoreVideo(mk(["skateboarding"]), model, { rand });
@@ -38,13 +38,12 @@ test("heuristic profile extracts tags and dislikes", () => {
 });
 
 test("ranker: related-word interests match and related avoids filter", () => {
-  const interests = new Map([["specialty-coffee", { weight: 3, impressions: 0 }]]);
-  const model = { interests, avoid: new Set(["pranks"]), totalViews: 5, sourceAff: new Map(), tokenIndex: buildTokenIndex(interests) };
+  const model = buildModel({ interests: [{ tag: "specialty-coffee", weight: 3, impressions: 0, positive: 2 }], avoid: ["pranks"], totalViews: 5 });
   const mk = (tags) => ({ id: tags.join(), tags_json: JSON.stringify(tags.map((t) => ({ tag: t, relevance: 1 }))), created_at: Date.now(), source: "youtube", embed_kind: "youtube", creator: "" });
   const rand = () => 0.5;
   const coffee = scoreVideo(mk(["coffee"]), model, { rand });
   const other = scoreVideo(mk(["baseball"]), model, { rand });
   assert.ok(coffee.match > 1.5 && coffee.total > other.total);
-  assert.match(coffee.explanation, /specialty coffee/);
+  assert.equal(coffee.explanation, "Because you watch coffee");
   assert.equal(scoreVideo(mk(["prank-videos"]), model, { rand }), null);
 });

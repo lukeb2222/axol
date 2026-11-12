@@ -3,7 +3,8 @@ import { db, q, uid, now, transaction } from "./db.js";
 import { SOURCES } from "./sources/index.js";
 import { tagVideos } from "./ai/tagger.js";
 import { cacheMany, mediaEnabled } from "./media.js";
-import { apifyEnabled, tiktokFiles } from "./sources/apify.js";
+import { apifyEnabled, apifyRunsToday, tiktokFiles } from "./sources/apify.js";
+import { youtubeUnitsUsed } from "./sources/youtube.js";
 import { config } from "./config.js";
 import { TAXONOMY } from "./ai/taxonomy.js";
 
@@ -191,7 +192,7 @@ export function discoverTopic(topic, { waitMs = 6000 } = {}) {
     const key = normQuery(query);
     const cached = q.get("SELECT last_run_at FROM query_runs WHERE source = ? AND query_norm = ?", s.name, key);
     if (cached && now() - cached.last_run_at < config.ranking.queryCacheMs) continue;
-    if (now() < (pausedUntil[s.name] || 0)) continue;
+    if (budgetSpent(s.name)) continue;
     const id = `${s.name}:${key}`;
     if (!topicInflight.has(id)) {
       const p = (async () => {
@@ -217,15 +218,33 @@ export function discoverTopic(topic, { waitMs = 6000 } = {}) {
   return wait.then(() => ({ started: lanes.length, ...topicStatus(topic) }));
 }
 
-/** Which platforms are still fetching this topic, and which are paused by a spent budget. */
+/** Has this platform's daily budget run out? Checked against the ledger, before trying anything. */
+export function budgetSpent(name) {
+  if (now() < (pausedUntil[name] || 0)) return true;
+  if (name === "youtube") return youtubeUnitsUsed() + 101 > config.youtubeDailyUnits; // one search + one details call
+  if (apifyEnabled() && (name === "tiktok" || name === "instagram")) return apifyRunsToday() >= config.apifyDailyRuns;
+  return false;
+}
+
+/**
+ * Where a fresh search for this topic stands on each platform that can search:
+ *   pending   — running right now
+ *   paused    — the platform's daily budget is spent; nothing will be attempted
+ *   fresh     — already searched within the cache window, so there is nothing new to fetch
+ *   available — could be searched now
+ */
 export function topicStatus(topic) {
   const base = normQuery(topic);
   const plan = { youtube: `${base} shorts`, tiktok: base, instagram: base };
   const names = Object.values(SOURCES).filter((s) => s.canDiscover()).map((s) => s.name);
-  return {
-    pending: names.filter((n) => topicInflight.has(`${n}:${normQuery(plan[n])}`)),
-    paused: names.filter((n) => now() < (pausedUntil[n] || 0)),
-  };
+  const pending = names.filter((n) => topicInflight.has(`${n}:${normQuery(plan[n])}`));
+  const fresh = names.filter((n) => {
+    const cached = q.get("SELECT last_run_at FROM query_runs WHERE source = ? AND query_norm = ?", n, normQuery(plan[n]));
+    return cached && now() - cached.last_run_at < config.ranking.queryCacheMs;
+  });
+  const paused = names.filter((n) => !pending.includes(n) && !fresh.includes(n) && budgetSpent(n));
+  const available = names.filter((n) => !pending.includes(n) && !fresh.includes(n) && !paused.includes(n));
+  return { pending, paused, fresh, available };
 }
 
 /**
