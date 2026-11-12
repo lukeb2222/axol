@@ -42,7 +42,7 @@ export default function VideoCard({ item, active, near, prewarm, warm, soundOn, 
     const t = Date.now();
     if (!force && t - a.lastSent < PROGRESS_EVERY_MS) return;
     a.lastSent = t;
-    beacon({ impressionId: item.impressionId, type: "progress", watchedMs: Math.round(a.watchedMs), durationMs: Math.round(a.durationMs), replays: a.replays });
+    beacon({ impressionId: item.impressionId, type: "progress", watchedMs: Math.round(a.watchedMs), durationMs: Math.round(a.durationMs), replays: a.replays, startMs: a.startMs || 0 });
   }, [item.impressionId]);
 
   // Player clock (YouTube, TikTok): count only time that was actually playing.
@@ -81,7 +81,7 @@ export default function VideoCard({ item, active, near, prewarm, warm, soundOn, 
     const a = acc.current;
     if (a.finalized) return;
     a.finalized = true;
-    beacon({ impressionId: item.impressionId, type: reason, watchedMs: Math.round(a.watchedMs), durationMs: Math.round(a.durationMs), replays: a.replays, skipped: a.watchedMs < 2500 })
+    beacon({ impressionId: item.impressionId, type: reason, watchedMs: Math.round(a.watchedMs), durationMs: Math.round(a.durationMs), replays: a.replays, skipped: a.watchedMs < 2500, startMs: a.startMs || 0 })
       .then((r) => r && onFinished?.(r));
   }, [item.impressionId, onFinished]);
 
@@ -103,7 +103,19 @@ export default function VideoCard({ item, active, near, prewarm, warm, soundOn, 
     acc.current.replays += 1;
     try { playerRef.current?.seekTo(0, true); playerRef.current?.playVideo(); } catch {}
   }, []);
-  const onPlaying = useCallback(() => { setPlaying(true); onAlive?.(item.source); }, [onAlive, item.source]);
+  const onPlaying = useCallback(() => {
+    setPlaying(true); onAlive?.(item.source);
+    const a = acc.current;
+    if (!a.startMs && a.activatedAt) a.startMs = Math.max(1, Date.now() - a.activatedAt);
+  }, [onAlive, item.source]);
+  // A clip still loading after a moment gets a spinner, so it never looks frozen.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    setSlow(false);
+    if (!active || playing) return;
+    const t = setTimeout(() => setSlow(true), 700);
+    return () => clearTimeout(t);
+  }, [active, playing]);
 
   // The platform says this clip cannot be played here (removed, private, embedding disabled).
   // It is retired from the catalog without counting as a skip, and the feed moves past it.
@@ -189,6 +201,7 @@ export default function VideoCard({ item, active, near, prewarm, warm, soundOn, 
         {render && kind === "instagram" && <EmbedPlayer item={item} onLoaded={onPlaying} onBroken={markBroken} />}
         <Poster item={item} />
         {!playing && <div className="shimmer" />}
+        {slow && !playing && !broken && <div className="loadspin"><span className="spin light" /></div>}
       </div>
       {controllable && <div className="tapzone" onPointerUp={onTap} />}
       <div className="shade top" />

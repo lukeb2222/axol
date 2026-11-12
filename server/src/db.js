@@ -138,6 +138,10 @@ for (const [name, ddl] of [
 // One-time repair: early downloads failed for lack of credentials, not because the files are bad.
 db.exec("UPDATE videos SET media_fails = 0 WHERE media_file = '' AND media_src LIKE 'https://api.apify.com/%' AND media_fails > 0");
 
+const impCols = new Set(db.prepare("PRAGMA table_info(impressions)").all().map((c) => c.name));
+// How long the clip took to show its first frame after it became the active one (0 = never did).
+if (!impCols.has("start_ms")) db.exec("ALTER TABLE impressions ADD COLUMN start_ms INTEGER NOT NULL DEFAULT 0");
+
 export const now = () => Date.now();
 export const uid = () => crypto.randomUUID();
 

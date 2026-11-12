@@ -30,6 +30,7 @@ apiRouter.get("/health", (_req, res) => {
     youtubeQuota: config.youtubeApiKey ? { used: youtubeUnitsUsed(), budget: config.youtubeDailyUnits } : null,
     apify: apifyEnabled() ? { runsToday: apifyRunsToday(), dailyBudget: config.apifyDailyRuns } : null,
     media: mediaStats(),
+    startTimes: startTimes(),
     ...discoveryState(),
   });
 });
@@ -94,6 +95,8 @@ apiRouter.post("/events", async (req, res) => {
   q.run("INSERT INTO events (user_id, impression_id, type, payload_json, created_at) VALUES (?, ?, ?, ?, ?)", userId, impressionId, String(type), JSON.stringify(req.body), now());
 
   const b = req.body;
+  const startMs = Math.round(Number(b.startMs) || 0);
+  if (startMs > 0 && startMs < 120000 && !imp.start_ms) q.run("UPDATE impressions SET start_ms = ? WHERE id = ?", startMs, imp.id);
   const watched = Math.max(imp.watched_ms, Math.min(10 * 60e3, Number(b.watchedMs) || 0));
   const duration = Number(b.durationMs) > 0 ? Number(b.durationMs) : imp.duration_ms;
   const replays = Math.max(imp.replays, Number(b.replays) || 0);
@@ -208,3 +211,19 @@ export const CHIPS = [
   "photography", "fashion", "diy", "history", "philosophy", "psychology", "productivity",
   "business", "finance", "books", "chess", "magic", "extreme-sports", "life-hacks",
 ];
+
+/** Median and slow-tail time-to-first-frame per platform over recent impressions, from real browsers. */
+function startTimes() {
+  const rows = q.all(`SELECT v.source, i.start_ms, i.watched_ms FROM impressions i JOIN videos v ON v.id = i.video_id
+    WHERE i.served_at > ? AND (i.start_ms > 0 OR i.finalized = 1) ORDER BY i.served_at DESC LIMIT 600`, now() - 6 * 3600e3);
+  const by = {};
+  for (const r of rows) {
+    const e = (by[r.source] ||= { times: [], neverStarted: 0 });
+    if (r.start_ms > 0) e.times.push(r.start_ms); else e.neverStarted++;
+  }
+  const pick = (a, p) => a.length ? a[Math.min(a.length - 1, Math.floor(a.length * p))] : null;
+  return Object.fromEntries(Object.entries(by).map(([src, e]) => {
+    const t = e.times.sort((a, b) => a - b);
+    return [src, { clips: t.length, medianMs: pick(t, 0.5), p90Ms: pick(t, 0.9), neverStarted: e.neverStarted }];
+  }));
+}
