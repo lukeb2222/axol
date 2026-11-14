@@ -3,6 +3,7 @@ import { api } from "../lib/api.js";
 import ReelScroller from "../components/ReelScroller.jsx";
 import Poster from "../components/Poster.jsx";
 import { Search as SearchIcon, X } from "../components/Icons.jsx";
+import Credit from "../components/Credit.jsx";
 
 const LABEL = { youtube: "Shorts", tiktok: "TikTok", instagram: "Reels" };
 const NAMES = { youtube: "YouTube", tiktok: "TikTok", instagram: "Instagram" };
@@ -222,6 +223,7 @@ export default function Search({ onPlayerOpen }) {
             )}
           </div>
         )}
+        <Credit />
       </div>
 
       {player && playing && (

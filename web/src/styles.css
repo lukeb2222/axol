@@ -79,6 +79,11 @@ textarea { min-height: 140px; resize: vertical; line-height: 1.5; }
 .skeleton.tall { width: 100%; aspect-ratio: auto; height: 60vh; }
 .skeleton p { position: relative; margin: 0; font-size: 13px; }
 
+/* Site credit: pinned to the foot of the page when content is short, after it when long. */
+.credit { margin-top: auto; padding-top: 12px; text-align: center; font-size: 12px; }
+.credit a { color: var(--fg-3); padding: 8px 10px; display: inline-block; border-radius: 8px; transition: color 0.15s; }
+.credit a:hover { color: var(--fg); text-decoration: underline; }
+
 /* chips */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {

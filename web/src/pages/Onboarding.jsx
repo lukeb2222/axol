@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../lib/api.js";
+import Credit from "../components/Credit.jsx";
 
 const STEPS = ["Reading what you love", "Mapping your taste", "Searching three platforms", "Tagging clips for you"];
 
@@ -56,6 +57,7 @@ export default function Onboarding({ onDone, name }) {
       {err && <div className="error">{err}</div>}
       <button className="btn primary" onClick={submit} disabled={text.trim().length < 3 && picked.size === 0}>Build my feed</button>
       <p className="tiny" style={{ textAlign: "center" }}>You can change all of this later. The feed keeps rewriting itself based on what you watch.</p>
+      <Credit />
     </div>
   );
 }

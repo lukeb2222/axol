@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { api } from "../lib/api.js";
+import Credit from "../components/Credit.jsx";
 
 export default function Auth({ onAuth }) {
   const [mode, setMode] = useState("signup");
@@ -33,6 +34,7 @@ export default function Auth({ onAuth }) {
       <button className="muted" style={{ textAlign: "center" }} onClick={() => setMode(mode === "signup" ? "login" : "signup")}>
         {mode === "signup" ? "Already have an account? Sign in" : "New here? Create an account"}
       </button>
+      <Credit />
     </div>
   );
 }

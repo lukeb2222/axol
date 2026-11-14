@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "../lib/api.js";
 import Poster from "../components/Poster.jsx";
 import { Flame } from "../components/Icons.jsx";
+import Credit from "../components/Credit.jsx";
 
 const NAMES = { youtube: "YouTube Shorts", tiktok: "TikTok", instagram: "Instagram Reels" };
 const pretty = (t) => t.replace(/-/g, " ");
@@ -190,6 +191,7 @@ export default function Dashboard({ user, onGoReels }) {
             )}
           </>
         )}
+        <Credit />
       </div>
     </div>
   );

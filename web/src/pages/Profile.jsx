@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../lib/api.js";
 import { Refresh } from "../components/Icons.jsx";
+import Credit from "../components/Credit.jsx";
 
 export default function Profile({ user, onLogout }) {
   const [p, setP] = useState(null);
@@ -99,6 +100,7 @@ export default function Profile({ user, onLogout }) {
         {msg && <div className="card" style={{ borderColor: "rgba(200,255,61,0.4)" }}>{msg}</div>}
         {health && <p className="tiny">Engine: AI {health.ai.enabled ? `on (${health.ai.model})` : "off, heuristics"} · YouTube {health.sources.youtube} · catalog {health.catalog} clips</p>}
         <button className="btn ghost" onClick={onLogout}>Sign out {user.email}</button>
+        <Credit />
       </div>
     </div>
   );
