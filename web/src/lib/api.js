@@ -20,7 +20,7 @@ export const api = {
   me: () => call("GET", "/auth/me"),
   chips: () => call("GET", "/onboarding/chips"),
   onboard: (b) => call("POST", "/onboarding", b),
-  feed: (n) => call("GET", `/feed?n=${n || 8}`),
+  feed: (n, start) => call("GET", `/feed?n=${n || 8}${start ? "&start=1" : ""}`),
   event: (b) => call("POST", "/events", b),
   profile: () => call("GET", "/profile"),
   refresh: () => call("POST", "/profile/refresh"),

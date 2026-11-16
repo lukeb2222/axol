@@ -7,6 +7,7 @@ import { aiStatus } from "./ai/claude.js";
 import { sourceStatus } from "./sources/index.js";
 import { warmupCatalog, backfillTikTokFiles } from "./ingest.js";
 import { cachePending } from "./media.js";
+import { loadPromotions } from "./promotions.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -39,4 +40,6 @@ app.listen(config.port, () => {
     setTimeout(run, 2000);
     setInterval(run, 6 * 3600e3).unref();
   }
+  // Promoted clips are scheduled from promotions.json on every boot, warm-up or not.
+  loadPromotions().then((n) => n && console.log(`[promotions] ${n} scheduled`)).catch((e) => console.warn("[promotions]", e.message));
 });

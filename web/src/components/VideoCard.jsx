@@ -12,7 +12,7 @@ const ASSUMED_EMBED_MS = 20000; // typical short clip when the platform hides du
 const PROGRESS_EVERY_MS = 2000;
 const LABEL = { youtube: "Shorts", tiktok: "TikTok", instagram: "Reels" };
 
-export default function VideoCard({ item, active, near, prewarm, warm, soundOn, needsGesture, paused, next, onFinished, onHide, onWantSound, onSoundBlocked, onBroken, onAlive, onSteer, showHint }) {
+export default function VideoCard({ item, active, near, prewarm, warm, soundOn, needsGesture, paused, next, onFinished, onHide, onWantSound, onSoundBlocked, onBroken, onAlive, onSteer, showHint, held, nudge, onPromoDone }) {
   // axol's own player whenever the server holds the file; the platform's embed otherwise.
   const [nativeFailed, setNativeFailed] = useState(false);
   const kind = item.videoUrl && !nativeFailed ? "native" : item.embedKind;
@@ -36,6 +36,8 @@ export default function VideoCard({ item, active, near, prewarm, warm, soundOn, 
     }
   };
   useEffect(() => { if (!active) setShowInfo(false); }, [active]);
+  const promo = item.promo;
+  const [remaining, setRemaining] = useState(() => Math.ceil((item.durationMs || 0) / 1000));
   const [playing, setPlaying] = useState(false);         // first frame is on screen → poster fades out
   const [embedControllable, setControllable] = useState(false); // TikTok's player, once it answers
   const controllable = kind === "native" || kind === "youtube" || embedControllable;
@@ -115,6 +117,7 @@ export default function VideoCard({ item, active, near, prewarm, warm, soundOn, 
   }, [active, finalize, sendProgress]);
 
   const onEnded = useCallback(() => {
+    onPromoDone?.(item.impressionId);
     acc.current.replays += 1;
     try { playerRef.current?.seekTo(0, true); playerRef.current?.playVideo(); } catch {}
   }, []);
@@ -197,6 +200,24 @@ export default function VideoCard({ item, active, near, prewarm, warm, soundOn, 
   const bg = posterCandidates(item)[0];
   const isPaused = paused || userPaused;
 
+  // A promoted clip holds the feed until it has played through. The countdown follows time
+  // actually played. If the player makes no progress for 15 seconds while it should be playing
+  // (the clip will not load here), the hold is let go so nobody is left stuck.
+  useEffect(() => {
+    if (!held) return;
+    let stall = 0, last = acc.current.watchedMs;
+    const t = setInterval(() => {
+      const a = acc.current, total = a.durationMs || item.durationMs || ASSUMED_EMBED_MS;
+      setRemaining(Math.max(0, Math.ceil((total - a.watchedMs) / 1000)));
+      if (a.watchedMs >= total - 1200) { onPromoDone?.(item.impressionId); return; }
+      if (isPaused || document.visibilityState !== "visible") { stall = 0; return; }
+      if (a.watchedMs > last) { last = a.watchedMs; stall = 0; } else if ((stall += 500) >= 15000) onPromoDone?.(item.impressionId);
+    }, 500);
+    return () => clearInterval(t);
+  }, [held, isPaused, item.impressionId, item.durationMs, onPromoDone]);
+  const openCta = () => { beacon({ impressionId: item.impressionId, type: "cta" }); };
+  const clock = `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`;
+
   return (
     <section className={`slide ${active ? "is-active" : ""} ${playing ? "is-playing" : ""}`} data-impression={item.impressionId}>
       {bg && <div className="bgblur" style={{ backgroundImage: `url(${bg})` }} />}
@@ -226,12 +247,16 @@ export default function VideoCard({ item, active, near, prewarm, warm, soundOn, 
       {active && wantsTap && controllable && <div className="soundnudge"><Volume muted />Tap for sound</div>}
       {active && kind === "instagram" && playing && <div className="ignote">Tap the video to play it with sound</div>}
       {broken && active && <div className="brokennote">{LABEL[item.source]} couldn't load this clip. Skipping it…</div>}
+      {promo && active && (held
+        ? <div className="adhold" key={nudge} data-testid="adhold">Ad · you can scroll in {clock}</div>
+        : promo.mustWatch && <div className="adhold done" data-testid="adhold-done">Thanks for watching · swipe up <span>▲</span></div>)}
       {showHint && !broken && <div className="hint"><span>▲</span>swipe up for the next one</div>}
 
       <div className="meta">
-        <span className="reason">✦ {why.label}</span>
+        <span className={`reason ${promo ? "promo" : ""}`}>{promo ? "Ad · " : "✦ "}{why.label}</span>
         <div className="row"><span className={`srcpill ${item.source}`}>{LABEL[item.source] || item.source}</span>{item.creator && <span className="creator">{item.creator}</span>}</div>
         {item.title && <div className="title">{item.title}</div>}
+        {promo?.cta && <a className={`promo-cta ${held ? "" : "ready"}`} href={promo.cta.url} target="_blank" rel="noopener" onClick={openCta} data-testid="promo-cta"><span className="yt">▶</span>{promo.cta.label}</a>}
         {showInfo && (
           <div className="whypanel" role="dialog" aria-label="Why this clip">
             <div className="why-head">Why this clip</div>
@@ -262,7 +287,7 @@ export default function VideoCard({ item, active, near, prewarm, warm, soundOn, 
 
       <div className="rail">
         <button className={`rbtn ${liked ? "liked" : ""}`} onClick={() => like(!liked)}><span className="ico"><Heart filled={liked} /></span>{liked ? "Liked" : "Like"}</button>
-        <button className="rbtn" onClick={hide}><span className="ico"><EyeOff /></span>Not me</button>
+        {!held && <button className="rbtn" onClick={hide}><span className="ico"><EyeOff /></span>Not me</button>}
         <button className="rbtn" onClick={share}><span className="ico"><Share /></span>Share</button>
         <button className="rbtn" onClick={() => setShowInfo((s) => !s)}><span className="ico"><Info /></span>Why</button>
       </div>

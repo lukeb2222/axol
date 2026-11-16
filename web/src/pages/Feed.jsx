@@ -11,12 +11,14 @@ export default function Feed({ paused }) {
   const [links, setLinks] = useState("");
   const [importing, setImporting] = useState(false);
   const fetching = useRef(false);
+  const opened = useRef(false); // the first request of a session asks for the opening clip
 
   const fetchMore = useCallback(async () => {
     if (fetching.current) return;
     fetching.current = true;
     try {
-      const d = await api.feed(8);
+      const d = await api.feed(8, !opened.current);
+      opened.current = true;
       if (typeof d.discoveryReady === "boolean") setDiscoveryReady(d.discoveryReady);
       setItems((prev) => {
         const seen = new Set(prev.map((i) => i.impressionId));

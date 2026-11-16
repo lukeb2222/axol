@@ -4,6 +4,7 @@ import { config } from "../config.js";
 import { requireAuth } from "../auth.js";
 import { onboard, getProfile, maybeResynthesize } from "../profileService.js";
 import { unseenCandidates } from "../ranker.js";
+import { openingItems, promotionStats, isPromoImpression } from "../promotions.js";
 import { serveBatch, steerFeed, SteerError } from "../feedService.js";
 import { boostTopic, muteTopic, removeTopic } from "../preferences.js";
 import { runDiscovery, upsertVideos, tagPending, saveQueries } from "../ingest.js";
@@ -33,6 +34,7 @@ apiRouter.get("/health", (_req, res) => {
     apify: apifyEnabled() ? { runsToday: apifyRunsToday(), dailyBudget: config.apifyDailyRuns } : null,
     media: mediaStats(),
     startTimes: startTimes(),
+    promotions: promotionStats(),
     ...discoveryState(),
   });
 });
@@ -67,7 +69,10 @@ apiRouter.get("/feed", async (req, res) => {
     await Promise.race([runDiscovery(userId, { limit: 3, staleMs: 0 }), sleep(12000)]);
     candidates = unseenCandidates(userId);
   }
-  const items = serveBatch(userId, candidates, size);
+  // The first request of a session opens with whatever is being promoted; the ranked feed follows.
+  const opening = req.query.start === "1" ? openingItems(userId) : [];
+  const featured = new Set(opening.map((i) => i.id));
+  const items = [...opening, ...serveBatch(userId, candidates.filter((v) => !featured.has(v.id)), size)];
   res.json({ items, poolSize: candidates.length, discovering: candidates.length < config.ranking.minPool, discoveryReady: !!config.youtubeApiKey || !!config.discoveryProviderUrl || apifyEnabled() });
 });
 
@@ -104,6 +109,9 @@ apiRouter.post("/events", async (req, res) => {
     case "share":
       q.run("UPDATE impressions SET shared = 1, updated_at = ? WHERE id = ?", now(), imp.id);
       return res.json({ ok: true });
+    case "cta":
+      // A tap on a promoted clip's channel link. Already recorded in the event log above.
+      return res.json({ ok: true });
     case "broken":
       // The player could not play this clip. Close the impression at a neutral score: an
       // unplayable clip says nothing about the viewer's taste, and they will not be served it
@@ -128,6 +136,8 @@ apiRouter.post("/events", async (req, res) => {
   // Learning step (hide / skip / finish). Idempotent per impression.
   const fresh = q.get("SELECT * FROM impressions WHERE id = ?", imp.id);
   if (fresh.finalized) return res.json({ ok: true, learned: null });
+  // A promoted clip was not the viewer's choice, so watching it says nothing about their taste.
+  if (isPromoImpression(fresh)) { q.run("UPDATE impressions SET finalized = 1, score = 0, updated_at = ? WHERE id = ?", now(), fresh.id); return res.json({ ok: true, learned: null }); }
   const video = q.get("SELECT * FROM videos WHERE id = ?", fresh.video_id);
   const learned = learnFromImpression(userId, fresh, video);
   let synth = null;

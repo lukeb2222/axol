@@ -79,6 +79,33 @@ export const youtube = {
     return (data.items || []).filter(playable).map((v) => normalize(v, label)).filter(isShort);
   },
 
+  /**
+   * Details for one clip by id: title, creator, duration, whether it can be embedded, and a link
+   * to the creator's channel. Uses the Data API when a key is set (1 unit), and the public oEmbed
+   * endpoint for the channel's @handle link. Returns null when nothing could be found out.
+   */
+  async lookup(id) {
+    const out = {};
+    if (config.youtubeApiKey) {
+      try {
+        const data = await yt("videos", { part: PARTS, id }, UNITS.list);
+        const v = data.items?.[0];
+        if (v) Object.assign(out, { title: v.snippet?.title || "", creator: v.snippet?.channelTitle || "", description: v.snippet?.description || "",
+          thumbnail: v.snippet?.thumbnails?.high?.url || "", duration_ms: isoDurationMs(v.contentDetails?.duration), playable: playable(v),
+          channelUrl: v.snippet?.channelId ? `https://www.youtube.com/channel/${v.snippet.channelId}` : "" });
+      } catch (e) { if (!e.quota) console.warn("[youtube] lookup:", e.message); }
+    }
+    try {
+      const res = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/shorts/${id}`)}&format=json`, { signal: AbortSignal.timeout(8000) });
+      if (res.ok) {
+        const d = await res.json();
+        out.title ||= d.title || ""; out.creator ||= d.author_name || ""; out.thumbnail ||= d.thumbnail_url || "";
+        if (d.author_url) out.channelUrl = d.author_url; // the readable @handle address
+      }
+    } catch {}
+    return Object.keys(out).length ? out : null;
+  },
+
   /** Build an item from a pasted URL (watch, shorts, youtu.be). */
   fromUrl(url) {
     const m = url.match(/(?:youtube\.com\/(?:shorts\/|watch\?v=)|youtu\.be\/)([A-Za-z0-9_-]{11})/);

@@ -33,11 +33,17 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
   const [hint, setHint] = useState(() => !overlay && !localStorage.getItem("axol_hinted"));
   const feedRef = useRef(null);
   const live = useRef({});
-  live.current = { active, paused, count: items.length, items };
+  live.current = { active, paused, count: items.length, items, locked: false };
   const glide = useRef({ running: false, raf: 0, lockUntil: 0, acc: 0, accTimer: 0 });
   const health = useRef({});               // consecutive player failures per platform
   const [tripped, setTripped] = useState({}); // platform -> time until which it is rested
   const watched = useRef(0);
+  // A promoted clip the viewer has not watched through yet holds the feed until it has played.
+  const [released, setReleased] = useState({});
+  const [nudge, setNudge] = useState(0);
+  const cur = items[active];
+  const locked = !overlay && !!cur?.promo?.mustWatch && !released[cur.impressionId];
+  const release = useCallback((impressionId) => setReleased((r) => (r[impressionId] ? r : { ...r, [impressionId]: true })), []);
 
   // Start on the requested clip (search results open mid-list).
   useLayoutEffect(() => {
@@ -74,9 +80,11 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
     return () => { root.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onResize); };
   }, []);
 
+  live.current.locked = locked;
   const goTo = useCallback((idx) => {
     const root = feedRef.current;
     if (!root) return;
+    if (live.current.locked && idx > live.current.active) { setNudge((n) => n + 1); return; }
     const to = Math.max(0, Math.min(live.current.count - 1, idx));
     const target = to * root.clientHeight;
     const start = root.scrollTop, dist = target - start;
@@ -185,6 +193,8 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
   const onBroken = useCallback((impressionId, definitive) => {
     const idx = live.current.items.findIndex((i) => i.impressionId === impressionId);
     if (idx < 0) return;
+    release(impressionId); // a clip that cannot play never holds the feed
+    live.current.locked = false;
     const source = live.current.items[idx].source;
     if (!definitive) {
       health.current[source] = (health.current[source] || 0) + 1;
@@ -195,16 +205,27 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
     }
     if (idx > live.current.active) { onRemove?.(impressionId); return; }
     if (idx === live.current.active) setTimeout(() => { if (live.current.items[live.current.active]?.impressionId === impressionId) goTo(live.current.active + 1); }, 1100);
-  }, [goTo, onRemove]);
+  }, [goTo, onRemove, release]);
+
+  // Touch scrolling is native, so the hold is applied to the scroller itself; a swipe while held
+  // pulses the countdown instead.
+  const touchY = useRef(null);
+  const onTouchStart = (e) => { touchY.current = e.touches[0]?.clientY ?? null; };
+  const onTouchEnd = (e) => {
+    const y = e.changedTouches[0]?.clientY;
+    if (locked && touchY.current != null && y != null && touchY.current - y > 40) setNudge((n) => n + 1);
+    touchY.current = null;
+  };
 
   return (
     <div className={`reels ${overlay ? "overlay" : ""}`}>
-      <div className="feed" ref={feedRef}>
+      <div className={`feed ${locked ? "held" : ""}`} ref={feedRef} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         {items.map((item, idx) => (
           <div key={item.impressionId} className="slide-wrap">
             <VideoCard item={item} active={idx === active && !paused} near={Math.abs(idx - active) === 1} prewarm={idx === active + 1 && !paused} warm={idx === active + 2 && !paused}
               soundOn={soundOn} needsGesture={needsGesture} paused={paused} next={items[idx + 1]}
-              onFinished={onFinished} onHide={onRemove} onWantSound={wantSound} onSoundBlocked={onSoundBlocked} onBroken={onBroken} onAlive={onAlive} onSteer={onSteer ? steer : undefined} showHint={hint && idx === 0} />
+              onFinished={onFinished} onHide={onRemove} onWantSound={wantSound} onSoundBlocked={onSoundBlocked} onBroken={onBroken} onAlive={onAlive} onSteer={onSteer ? steer : undefined} showHint={hint && idx === 0 && !locked}
+              held={locked && idx === active} nudge={nudge} onPromoDone={release} />
           </div>
         ))}
         {/* The loading card is deliberately not a snap point: browsers keep following whichever

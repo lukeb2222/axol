@@ -201,6 +201,17 @@ textarea { min-height: 140px; resize: vertical; line-height: 1.5; }
 .steer-msg { font-size: 13px; line-height: 1.4; color: #fff; padding: 8px 10px; border-radius: 10px; background: rgba(139,92,246,0.25); border: 1px solid rgba(139,92,246,0.45); }
 .upnext { display: inline-flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; font-size: 12px; font-weight: 600; color: #fff; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.16); padding: 6px 10px; border-radius: 999px; backdrop-filter: blur(10px); animation: fadeIn 0.4s ease both; }
 .upnext span { animation: nudge 1.2s ease-in-out infinite; }
+/* Promoted clip: the feed is held until it has played through once. */
+.feed.held { overflow-y: hidden; touch-action: none; }
+.meta .reason.promo { color: #111; background: #ffd23f; border-color: #ffd23f; }
+.adhold { position: absolute; top: calc(60px + var(--sat)); left: 50%; transform: translateX(-50%); z-index: 21; white-space: nowrap; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: #fff; background: rgba(0,0,0,0.62); border: 1px solid rgba(255,255,255,0.22); padding: 8px 14px; border-radius: 999px; backdrop-filter: blur(12px); pointer-events: none; animation: adPulse 0.45s var(--ease-out); }
+.adhold.done { color: #111; background: var(--accent); border-color: var(--accent); }
+.adhold.done span { display: inline-block; animation: nudge 1.2s ease-in-out infinite; }
+@keyframes adPulse { 0% { transform: translateX(-50%) scale(1.14); } 100% { transform: translateX(-50%) scale(1); } }
+.promo-cta { pointer-events: auto; display: inline-flex; align-items: center; gap: 10px; width: fit-content; max-width: 100%; padding: 11px 16px; border-radius: 14px; font-size: 14px; font-weight: 800; color: #fff; background: #ff0033; text-decoration: none; box-shadow: 0 8px 28px rgba(255,0,51,0.45); }
+.promo-cta .yt { display: grid; place-items: center; width: 24px; height: 17px; border-radius: 5px; background: #fff; color: #ff0033; font-size: 9px; }
+.promo-cta.ready { animation: ctaPop 1.4s ease-in-out infinite; }
+@keyframes ctaPop { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
 @keyframes nudge { 0%, 100% { transform: translateY(1px); } 50% { transform: translateY(-3px); } }
 .srcpill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #fff; padding: 4px 8px; border-radius: 6px; }
 .srcpill.youtube { background: #ff0033; } .srcpill.tiktok { background: #111; border: 1px solid #333; } .srcpill.instagram { background: linear-gradient(45deg, #f58529, #dd2a7b, #8134af); }
