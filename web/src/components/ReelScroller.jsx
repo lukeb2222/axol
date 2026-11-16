@@ -60,6 +60,8 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
       ticking = false;
       if (!root.clientHeight) return; // hidden behind another tab: nothing to measure
       if (glide.current.running) return; // a glide already activated its destination
+      // A held promoted clip stays put however the scroll was attempted.
+      if (live.current.locked && root.scrollTop > live.current.active * root.clientHeight) { root.scrollTop = live.current.active * root.clientHeight; return; }
       // Hand over to the incoming clip once the swipe is 30% of the way there, so it is already
       // playing by the time it settles.
       const pos = root.scrollTop / root.clientHeight, cur = live.current.active;
