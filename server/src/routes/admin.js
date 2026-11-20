@@ -188,6 +188,18 @@ adminRouter.get("/users/:id", (req, res) => {
   });
 });
 
+/** Remove an account and everything recorded about it (a test account, spam, or a member who asks). */
+adminRouter.delete("/users/:id", (req, res) => {
+  const user = q.get("SELECT id, email, is_admin FROM users WHERE id = ?", req.params.id);
+  if (!user) return res.status(404).json({ error: "no such user" });
+  if (user.is_admin && user.id !== req.user.id) return res.status(400).json({ error: "another owner account can only be removed by its owner" });
+  q.run("DELETE FROM events WHERE user_id = ?", user.id);
+  q.run("DELETE FROM activity WHERE user_id = ?", user.id);
+  q.run("DELETE FROM users WHERE id = ?", user.id); // profile, interests, watch history, invites and ads go with it
+  if (user.id !== req.user.id) track(req.user.id, "member_deleted", {});
+  res.json({ ok: true });
+});
+
 /* ------------------------------ activity and feedback ---------------------------- */
 
 adminRouter.get("/activity", (req, res) => {

@@ -126,3 +126,29 @@ test("the activity log records what people type, and never breaks on odd input",
   assert.deepEqual(rows.map((r) => r.kind), ["search", "feedback"]);
   assert.equal(JSON.parse(rows[0].data_json).q, "underwater hockey");
 });
+
+test("deleting an account removes what was recorded about it", async () => {
+  const express = (await import("express")).default;
+  const { adminRouter } = await import("../src/routes/admin.js");
+  const owner = makeViewer(), member = makeViewer();
+  q.run("UPDATE users SET is_admin = 1 WHERE id = ?", owner);
+  track(member, "search", { q: "bmx" });
+  referralState(member);
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => { req.user = q.get("SELECT id, email, display_name, is_admin FROM users WHERE id = ?", req.headers["x-user"]); next(); });
+  app.use("/admin", adminRouter);
+  const server = app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}/admin`;
+  try {
+    assert.equal((await fetch(`${base}/overview`, { headers: { "x-user": member } })).status, 403, "members cannot open the owner view");
+    const ov = await (await fetch(`${base}/overview`, { headers: { "x-user": owner } })).json();
+    assert.ok(ov.totals.users >= 2 && ov.daily.length === 14 && ov.funnel.length === 5);
+    const csv = await (await fetch(`${base}/export/feedback.csv`, { headers: { "x-user": owner } })).text();
+    assert.match(csv, /'=HYPERLINK/, "spreadsheet formulas are exported as text");
+    assert.equal((await fetch(`${base}/users/${member}`, { method: "DELETE", headers: { "x-user": owner } })).status, 200);
+    assert.equal(q.get("SELECT COUNT(*) AS n FROM users WHERE id = ?", member).n, 0);
+    assert.equal(q.get("SELECT COUNT(*) AS n FROM activity WHERE user_id = ?", member).n, 0);
+    assert.equal(q.get("SELECT COUNT(*) AS n FROM invites WHERE user_id = ?", member).n, 0);
+  } finally { server.close(); }
+});

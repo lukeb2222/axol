@@ -36,6 +36,7 @@ function describe(kind, d = {}) {
     case "invite_used": return "Someone signed up with their invite link";
     case "owner_access": return "Turned on owner access";
     case "export": return `Downloaded the ${d.name} export`;
+    case "member_deleted": return "Deleted a member";
     default: return `${kind} ${JSON.stringify(d)}`;
   }
 }
@@ -242,6 +243,10 @@ function UserDetail({ id, back, openUser }) {
   if (err) return <div className="error">{err}</div>;
   if (!d) return <div className="skeleton tall"><div className="shimmer" /></div>;
   const u = d.user;
+  const remove = async () => {
+    if (!window.confirm(`Delete ${u.email} and everything recorded about them? This cannot be undone.`)) return;
+    try { await api.admin.deleteUser(u.id); back(); } catch (e) { setErr(e.message); }
+  };
   return (
     <>
       <button className="btn ghost sm" style={{ width: "fit-content" }} onClick={back}>← All members</button>
@@ -280,6 +285,7 @@ function UserDetail({ id, back, openUser }) {
               <td>{[w.liked && "liked", w.shared && "shared", w.hidden && "not me", w.skipped && "skipped", w.replays > 0 && `replayed ×${w.replays}`].filter(Boolean).join(" · ")}</td></tr>
           ))}</tbody></table></div>
       </div>
+      {!u.is_admin && <button className="btn ghost sm" style={{ width: "fit-content", color: "#ff8da1" }} onClick={remove}>Delete this member and their data</button>}
     </>
   );
 }

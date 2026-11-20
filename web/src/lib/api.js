@@ -42,6 +42,7 @@ export const api = {
     overview: () => call("GET", `/admin/overview?tz=${-new Date().getTimezoneOffset()}`),
     users: ({ q = "", sort = "newest", offset = 0 } = {}) => call("GET", `/admin/users?q=${encodeURIComponent(q)}&sort=${sort}&offset=${offset}`),
     user: (id) => call("GET", `/admin/users/${encodeURIComponent(id)}`),
+    deleteUser: (id) => call("DELETE", `/admin/users/${encodeURIComponent(id)}`),
     activity: ({ kind = "", before = "" } = {}) => call("GET", `/admin/activity?kind=${encodeURIComponent(kind)}${before ? `&before=${before}` : ""}`),
     feedback: () => call("GET", "/admin/feedback"),
     ads: () => call("GET", "/admin/ads"),
