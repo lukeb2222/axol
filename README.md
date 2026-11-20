@@ -123,3 +123,20 @@ server serve `web/dist` (it does so automatically when the folder exists).
   terms-of-service exposure that embedding does not; set `APIFY_DOWNLOAD_TIKTOK=0` to embed only.
 - The interest model is per user and fully inspectable on the profile screen; any interest can be
   boosted, muted, or removed, and dislikes from onboarding are hard filters.
+
+## Owner view
+
+Everything members type and do is recorded: sign-ups, onboarding answers, searches, pasted links,
+steering, feedback (table `activity`), and every clip shown with its watch time (`impressions`,
+`events`). The **Owner** tab shows it: headline numbers, a "worth a look" list of things the
+numbers suggest fixing, every member with their full history, a live activity log, feedback, ad
+review, and CSV downloads. Passwords are never shown or exported.
+
+To get the tab: set `ADMIN_KEY` on the server, sign in, open `/#owner` and enter the key once.
+
+## Invites and earned ads
+
+Each member has ten single-use invite links (You tab). When one friend joins through a link and
+finishes setup, the member earns one ad: a YouTube Short of their choice. The owner approves it
+in Owner → Ads; it then runs for 7 days as a labelled, skippable "Sponsored" clip (at most one
+per batch, once a day per viewer) with a button to the creator's channel.

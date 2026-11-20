@@ -5,6 +5,7 @@ import { config } from "../config.js";
 import { safeTags, completionOf } from "../learner.js";
 import { publicVideo } from "../videoView.js";
 import { searchCatalog, hydrate, broaden, discoveryOptions } from "../search.js";
+import { track } from "../activity.js";
 
 export const insightsRouter = Router();
 
@@ -119,7 +120,9 @@ insightsRouter.get("/search", (req, res) => {
   const raw = String(req.query.q || "").trim().slice(0, 80);
   if (raw.replace(/[^a-z0-9]/gi, "").length < 2) return res.status(400).json({ error: "type a topic to search" });
   const scope = req.query.scope === "related" ? "related" : "strong";
-  res.json(searchCatalog(req.user.id, raw, { scope, n: Math.min(24, Number(req.query.n) || 18), remember: req.query.refresh !== "1" }));
+  const out = searchCatalog(req.user.id, raw, { scope, n: Math.min(24, Number(req.query.n) || 18), remember: req.query.refresh !== "1" });
+  if (req.query.refresh !== "1") track(req.user.id, "search", { q: raw, results: out.total, related: out.relatedTotal || 0 });
+  res.json(out);
 });
 
 /** POST /search/items { q, ids } — the next page of a result list, by id, so paging can never drift from it. */
@@ -140,6 +143,7 @@ function allowLive(userId) {
 insightsRouter.post("/search/discover", async (req, res) => {
   const raw = String(req.body?.q || "").trim().slice(0, 80);
   if (raw.replace(/[^a-z0-9]/gi, "").length < 2) return res.status(400).json({ error: "type a topic to search" });
+  track(req.user.id, "search_fresh", { q: raw });
   if (!allowLive(req.user.id)) return res.json({ started: [], limited: true, ...discoveryOptions(raw) });
   res.json(await broaden(req.user.id, raw));
 });

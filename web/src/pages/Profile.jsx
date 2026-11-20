@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "../lib/api.js";
 import { Refresh } from "../components/Icons.jsx";
 import Credit from "../components/Credit.jsx";
+import Invite from "../components/Invite.jsx";
 
 export default function Profile({ user, onLogout }) {
   const [p, setP] = useState(null);
@@ -9,6 +10,11 @@ export default function Profile({ user, onLogout }) {
   const [links, setLinks] = useState("");
   const [msg, setMsg] = useState("");
   const [health, setHealth] = useState(null);
+  const [fb, setFb] = useState({ text: "", sent: false, busy: false, err: "" });
+  const sendFeedback = async () => {
+    setFb((f) => ({ ...f, busy: true, err: "" }));
+    try { await api.feedback(fb.text); setFb({ text: "", sent: true, busy: false, err: "" }); } catch (e) { setFb((f) => ({ ...f, busy: false, err: e.message })); }
+  };
 
   const load = () => api.profile().then((d) => setP(d.profile));
   useEffect(() => { load(); api.health().then(setHealth).catch(() => {}); }, []);
@@ -49,6 +55,8 @@ export default function Profile({ user, onLogout }) {
           <div className="stat"><div className="v">{hours < 1 ? `${Math.round(p.stats.watched_ms / 60000)}m` : `${hours.toFixed(1)}h`}</div><div className="k">watched</div></div>
           <div className="stat"><div className="v">{p.stats.likes || 0}</div><div className="k">likes</div></div>
         </div>
+
+        <Invite />
 
         <div>
           <div className="row between" style={{ marginBottom: 10 }}><h2>Interests</h2><span className="tiny">▲ boost · ✕ mute</span></div>
@@ -96,6 +104,17 @@ export default function Profile({ user, onLogout }) {
             </div>
           </div>
         )}
+
+        <div data-testid="feedback">
+          <h2 style={{ marginBottom: 8 }}>Tell us what to improve</h2>
+          <p className="tiny">Something broken, missing or annoying? It goes straight to the person who runs axol.</p>
+          <textarea style={{ minHeight: 80 }} value={fb.text} onChange={(e) => setFb({ ...fb, text: e.target.value, sent: false })} placeholder="What should axol do better?" maxLength={2000} />
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="btn sm" onClick={sendFeedback} disabled={fb.text.trim().length < 3 || fb.busy}>{fb.busy && <span className="spin" />}Send feedback</button>
+            {fb.sent && <span className="tiny" role="status">Sent. Thank you.</span>}
+            {fb.err && <span className="error">{fb.err}</span>}
+          </div>
+        </div>
 
         {msg && <div className="card" style={{ borderColor: "rgba(200,255,61,0.4)" }}>{msg}</div>}
         {health && <p className="tiny">Engine: AI {health.ai.enabled ? `on (${health.ai.model})` : "off, heuristics"} · YouTube {health.sources.youtube} · catalog {health.catalog} clips</p>}

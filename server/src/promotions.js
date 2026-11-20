@@ -63,13 +63,17 @@ export async function loadPromotions() {
   return keep.length;
 }
 
+/** The label on a member's earned ad (see referrals.js). */
+export const SPONSORED = "Sponsored";
+
 // A channel link that opens YouTube's own "subscribe?" prompt.
-function subscribeUrl(url) {
+export function subscribeUrl(url) {
   try { const u = new URL(url); if (/(^|\.)youtube\.com$/.test(u.hostname) && /^\/(@|channel\/|c\/)/.test(u.pathname)) u.searchParams.set("sub_confirmation", "1"); return u.toString(); } catch { return url; }
 }
 
 /** True when this impression is a promoted placement (so it is kept out of learning). */
 export function isPromoImpression(imp) {
+  if (imp.reason === SPONSORED) return !!q.get("SELECT 1 FROM ads WHERE video_id = ?", imp.video_id);
   return !!q.get("SELECT 1 FROM promotions WHERE video_id = ? AND label = ?", imp.video_id, imp.reason);
 }
 

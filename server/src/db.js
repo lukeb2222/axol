@@ -115,6 +115,41 @@ CREATE TABLE IF NOT EXISTS quota_ledger (
   units INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (source, day)
 );
+-- Everything a person does or types, in order: sign-ups, onboarding answers, searches, pasted
+-- links, steering, feedback. Watching is recorded in impressions and events.
+CREATE TABLE IF NOT EXISTS activity (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  data_json TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_activity_user ON activity(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_activity_kind ON activity(kind, created_at);
+-- Invite links: ten per person, each good for one new member.
+CREATE TABLE IF NOT EXISTS invites (
+  code TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  used_by TEXT,
+  used_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_invites_user ON invites(user_id);
+-- Ads members earn by inviting someone. Each is reviewed by the owner before it runs.
+CREATE TABLE IF NOT EXISTS ads (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  video_id TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+  url TEXT NOT NULL,
+  cta_label TEXT NOT NULL DEFAULT '',
+  cta_url TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',   -- pending | approved | rejected | ended
+  note TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  decided_at INTEGER,
+  starts_at INTEGER,
+  ends_at INTEGER
+);
 CREATE TABLE IF NOT EXISTS synth_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -141,6 +176,13 @@ db.exec("UPDATE videos SET media_fails = 0 WHERE media_file = '' AND media_src L
 const impCols = new Set(db.prepare("PRAGMA table_info(impressions)").all().map((c) => c.name));
 // How long the clip took to show its first frame after it became the active one (0 = never did).
 if (!impCols.has("start_ms")) db.exec("ALTER TABLE impressions ADD COLUMN start_ms INTEGER NOT NULL DEFAULT 0");
+
+const userCols = new Set(db.prepare("PRAGMA table_info(users)").all().map((c) => c.name));
+for (const [name, ddl] of [
+  ["is_admin", "INTEGER NOT NULL DEFAULT 0"],      // may open the owner's data view
+  ["last_seen_at", "INTEGER NOT NULL DEFAULT 0"],
+  ["referred_by", "TEXT"],                          // the member whose invite link they joined with
+]) if (!userCols.has(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${ddl}`);
 
 export const now = () => Date.now();
 export const uid = () => crypto.randomUUID();

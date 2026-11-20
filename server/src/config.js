@@ -15,6 +15,8 @@ try {
 } catch {}
 
 export const config = {
+  // Entering this key once in the app makes the signed-in account the owner (see /api/admin/claim).
+  adminKey: process.env.ADMIN_KEY || "",
   port: Number(process.env.PORT || 3000),
   dbPath: process.env.AXOL_DB_PATH || path.join(here, "..", "data", "axol.sqlite"),
   webDist: path.join(here, "..", "..", "web", "dist"),

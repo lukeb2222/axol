@@ -2,6 +2,8 @@ import { Router } from "express";
 import { q, now } from "../db.js";
 import { hashPassword, verifyPassword, createSession, newUserId, requireAuth, readToken } from "../auth.js";
 import { getProfile } from "../profileService.js";
+import { track } from "../activity.js";
+import { redeemInvite } from "../referrals.js";
 
 export const authRouter = Router();
 
@@ -19,9 +21,11 @@ authRouter.post("/signup", (req, res) => {
   const id = newUserId();
   q.run("INSERT INTO users (id, email, password_hash, display_name, created_at) VALUES (?, ?, ?, ?, ?)", id, email, hashPassword(password), name, now());
   q.run("INSERT INTO profiles (user_id, updated_at) VALUES (?, ?)", id, now());
+  const invitedBy = redeemInvite(String(req.body?.invite || ""), id);
+  track(id, "signup", { name, invited: !!invitedBy, invite: invitedBy ? String(req.body.invite) : undefined });
   const token = createSession(id);
   setCookie(res, token);
-  res.json({ token, user: { id, email, name }, profile: getProfile(id) });
+  res.json({ token, user: { id, email, name, admin: false }, profile: getProfile(id) });
 });
 
 authRouter.post("/login", (req, res) => {
@@ -32,7 +36,8 @@ authRouter.post("/login", (req, res) => {
   }
   const token = createSession(row.id);
   setCookie(res, token);
-  res.json({ token, user: { id: row.id, email: row.email, name: row.display_name }, profile: getProfile(row.id) });
+  track(row.id, "login", {});
+  res.json({ token, user: { id: row.id, email: row.email, name: row.display_name, admin: !!row.is_admin }, profile: getProfile(row.id) });
 });
 
 authRouter.post("/logout", (req, res) => {
@@ -43,5 +48,5 @@ authRouter.post("/logout", (req, res) => {
 });
 
 authRouter.get("/me", requireAuth, (req, res) => {
-  res.json({ user: { id: req.user.id, email: req.user.email, name: req.user.display_name }, profile: getProfile(req.user.id) });
+  res.json({ user: { id: req.user.id, email: req.user.email, name: req.user.display_name, admin: !!req.user.is_admin }, profile: getProfile(req.user.id) });
 });

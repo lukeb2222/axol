@@ -20,7 +20,9 @@ export function createSession(userId) {
 
 export function userFromToken(token) {
   if (!token) return null;
-  return q.get("SELECT u.id, u.email, u.display_name FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?", token) || null;
+  const user = q.get("SELECT u.id, u.email, u.display_name, u.is_admin, u.last_seen_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?", token) || null;
+  if (user && now() - user.last_seen_at > 60e3) q.run("UPDATE users SET last_seen_at = ? WHERE id = ?", now(), user.id);
+  return user;
 }
 
 export function readToken(req) {
@@ -35,6 +37,12 @@ export function requireAuth(req, res, next) {
   const user = userFromToken(readToken(req));
   if (!user) return res.status(401).json({ error: "not signed in" });
   req.user = user;
+  next();
+}
+
+/** Express middleware, after requireAuth: only the owner gets through. */
+export function requireAdmin(req, res, next) {
+  if (!req.user?.is_admin) return res.status(403).json({ error: "owner access only" });
   next();
 }
 

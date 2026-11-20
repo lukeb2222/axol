@@ -33,6 +33,29 @@ export const api = {
   discover: (q) => call("POST", "/search/discover", { q }),
   steer: (b) => call("POST", "/feed/steer", b),
   suggest: () => call("GET", "/search/suggest"),
+  feedback: (text) => call("POST", "/feedback", { text }),
+  referrals: () => call("GET", "/referrals"),
+  submitAd: (url) => call("POST", "/referrals/ad", { url }),
+  // Owner's data view.
+  admin: {
+    claim: (key) => call("POST", "/admin/claim", { key }),
+    overview: () => call("GET", `/admin/overview?tz=${-new Date().getTimezoneOffset()}`),
+    users: ({ q = "", sort = "newest", offset = 0 } = {}) => call("GET", `/admin/users?q=${encodeURIComponent(q)}&sort=${sort}&offset=${offset}`),
+    user: (id) => call("GET", `/admin/users/${encodeURIComponent(id)}`),
+    activity: ({ kind = "", before = "" } = {}) => call("GET", `/admin/activity?kind=${encodeURIComponent(kind)}${before ? `&before=${before}` : ""}`),
+    feedback: () => call("GET", "/admin/feedback"),
+    ads: () => call("GET", "/admin/ads"),
+    decideAd: (id, action, note) => call("POST", `/admin/ads/${encodeURIComponent(id)}`, { action, note }),
+    /** Fetch a CSV with the sign-in token and hand it to the browser as a download. */
+    async download(name) {
+      const res = await fetch(`/api/admin/export/${name}.csv`, { headers: { authorization: `Bearer ${getToken()}` } });
+      if (!res.ok) throw new Error(`export failed (${res.status})`);
+      const url = URL.createObjectURL(await res.blob());
+      const a = Object.assign(document.createElement("a"), { href: url, download: `axol-${name}-${new Date().toISOString().slice(0, 10)}.csv` });
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    },
+  },
 };
 
 /** Fire-and-forget event that survives page unload. */

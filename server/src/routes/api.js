@@ -5,6 +5,9 @@ import { requireAuth } from "../auth.js";
 import { onboard, getProfile, maybeResynthesize } from "../profileService.js";
 import { unseenCandidates } from "../ranker.js";
 import { openingItems, promotionStats, isPromoImpression } from "../promotions.js";
+import { track } from "../activity.js";
+import { referralState, submitAd, sponsoredItem, AdError } from "../referrals.js";
+import { adminRouter } from "./admin.js";
 import { serveBatch, steerFeed, SteerError } from "../feedService.js";
 import { boostTopic, muteTopic, removeTopic } from "../preferences.js";
 import { runDiscovery, upsertVideos, tagPending, saveQueries } from "../ingest.js";
@@ -54,6 +57,7 @@ apiRouter.post("/onboarding", async (req, res) => {
   const text = String(req.body?.text || "").slice(0, 4000);
   const chips = Array.isArray(req.body?.chips) ? req.body.chips.map(String).slice(0, 30) : [];
   if (text.trim().length < 3 && chips.length === 0) return res.status(400).json({ error: "tell us at least one thing you love" });
+  track(req.user.id, "onboarding", { text, chips });
   const profile = await onboard(req.user.id, { text, chips });
   res.json({ profile });
 });
@@ -73,6 +77,11 @@ apiRouter.get("/feed", async (req, res) => {
   const opening = req.query.start === "1" ? openingItems(userId) : [];
   const featured = new Set(opening.map((i) => i.id));
   const items = [...opening, ...serveBatch(userId, candidates.filter((v) => !featured.has(v.id)), size)];
+  // At most one member's sponsored clip per batch, a few clips in, and always labelled.
+  if (items.length >= 4) {
+    const ad = sponsoredItem(userId, new Set(items.map((i) => i.id)));
+    if (ad) items.splice(3, 0, ad);
+  }
   res.json({ items, poolSize: candidates.length, discovering: candidates.length < config.ranking.minPool, discoveryReady: !!config.youtubeApiKey || !!config.discoveryProviderUrl || apifyEnabled() });
 });
 
@@ -156,6 +165,7 @@ apiRouter.use(insightsRouter);
 apiRouter.get("/profile", (req, res) => res.json({ profile: getProfile(req.user.id) }));
 
 apiRouter.post("/profile/refresh", async (req, res) => {
+  track(req.user.id, "retune", {});
   const synth = await maybeResynthesize(req.user.id, { force: true });
   res.json({ synth, profile: getProfile(req.user.id) });
 });
@@ -170,6 +180,7 @@ apiRouter.post("/profile/interest", (req, res) => {
   else if (action === "boost") boostTopic(req.user.id, tag);
   else if (action === "mute") muteTopic(req.user.id, tag);
   else return res.status(400).json({ error: "unknown action" });
+  track(req.user.id, "interest", { tag, action });
   res.json({ profile: getProfile(req.user.id) });
 });
 
@@ -181,6 +192,7 @@ apiRouter.post("/profile/interest", (req, res) => {
 apiRouter.post("/feed/steer", (req, res) => {
   try {
     const b = req.body || {};
+    track(req.user.id, "steer", { tag: String(b.tag || ""), direction: String(b.direction || "") });
     res.json(steerFeed(req.user.id, { impressionId: b.impressionId, tag: String(b.tag || ""), direction: String(b.direction || ""), queue: Array.isArray(b.queue) ? b.queue : [], replan: b.replan !== false }));
   } catch (e) {
     if (e instanceof SteerError) return res.status(400).json({ error: e.message });
@@ -198,12 +210,41 @@ apiRouter.post("/import", async (req, res) => {
     const it = itemFromUrl(String(u));
     if (it) items.push(it);
   }
+  track(req.user.id, "import", { links: urls.map(String).filter(Boolean).slice(0, 50), supported: items.length });
   if (!items.length) return res.status(400).json({ error: "no supported links found" });
   const enriched = await Promise.all(items.map((it) => (SOURCES[it.source].enrich ? SOURCES[it.source].enrich(it) : it)));
   const fresh = upsertVideos(enriched);
   await tagPending(fresh);
   res.json({ added: fresh.length, total: enriched.length });
 });
+
+/* ----------------------------- feedback and referrals ---------------------------- */
+
+/** Anything a member wants the owner to know: what to fix, what to add. */
+apiRouter.post("/feedback", (req, res) => {
+  const text = String(req.body?.text || "").trim().slice(0, 2000);
+  if (text.length < 3) return res.status(400).json({ error: "write a few words first" });
+  track(req.user.id, "feedback", { text });
+  res.json({ ok: true });
+});
+
+/** The member's ten invite links, who has joined through them, and the ad they have earned. */
+apiRouter.get("/referrals", (req, res) => res.json(referralState(req.user.id)));
+
+/** Use an earned ad: { url } is the YouTube Short to promote. It runs once the owner approves it. */
+apiRouter.post("/referrals/ad", async (req, res) => {
+  try {
+    const url = String(req.body?.url || "").trim().slice(0, 300);
+    track(req.user.id, "ad_submit", { url });
+    await submitAd(req.user.id, url);
+    res.json(referralState(req.user.id));
+  } catch (e) {
+    if (e instanceof AdError) return res.status(400).json({ error: e.message });
+    throw e;
+  }
+});
+
+apiRouter.use("/admin", adminRouter);
 
 apiRouter.post("/queries", (req, res) => {
   saveQueries(req.user.id, req.body?.queries || {});
