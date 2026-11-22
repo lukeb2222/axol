@@ -1,6 +1,6 @@
 // Preferences kept on this device. Components subscribe so a toggle on one screen takes effect on another.
 const KEY = "axol_settings";
-const DEFAULTS = { nod: false, tongue: false, sensitivity: "normal", handsFreePaused: false };
+const DEFAULTS = { nod: false, tongue: false, sensitivity: "normal", handsFreePaused: false, cameraId: "" };
 
 let current = (() => { try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || "{}") }; } catch { return { ...DEFAULTS }; } })();
 const listeners = new Set();

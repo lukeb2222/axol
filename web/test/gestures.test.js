@@ -25,6 +25,20 @@ test("pitch is positive when the head tips down, negative when it tips up", () =
   assert.ok(Math.abs(headAngles(face(0)).yaw) < 1e-6);
 });
 
+test("a nod reads the same when the camera picture is sideways or upside down", () => {
+  // The head tipped down 15 degrees, then the whole picture turned by `roll` degrees.
+  const tipped = (roll) => {
+    const p = (15 * Math.PI) / 180, r = (roll * Math.PI) / 180, c = Math.cos(r), s = Math.sin(r);
+    const cols = [[1, 0, 0], [0, Math.cos(p), Math.sin(p)], [0, -Math.sin(p), Math.cos(p)]].map(([x, y, z]) => [c * x - s * y, s * x + c * y, z]);
+    return [...cols[0], 0, ...cols[1], 0, ...cols[2], 0, 0, 0, 0, 1];
+  };
+  for (const roll of [0, 20, 90, 180, 270]) {
+    const a = headAngles(tipped(roll));
+    assert.ok(Math.abs(a.pitch - 15) < 1e-6, `pitch at roll ${roll}: ${a.pitch}`);
+    assert.ok(Math.abs(a.yaw) < 1e-6, `yaw at roll ${roll}: ${a.yaw}`);
+  }
+});
+
 test("nods are counted in a real clip of someone nodding", () => {
   const n = count(createNodDetector(SENSITIVITY.normal.nod), readings("head_nodding"));
   assert.ok(n >= 4 && n <= 10, `expected several nods in 9 seconds, got ${n}`);
@@ -44,14 +58,20 @@ test("one nod is one scroll; looking down and staying there is none", () => {
   assert.equal(count(createNodDetector(), trace([...rest, [1800, -16], [2100, 2], [4000, 2]])), 0, "tipping the head up and back");
   assert.equal(count(createNodDetector(), trace([...rest, [9000, 20], [12000, 20]])), 0, "slowly slumping");
   assert.equal(count(createNodDetector(), trace([...rest, [1800, 7], [2100, 2], [4000, 2]])), 0, "a small bob is under the normal threshold");
-  assert.equal(count(createNodDetector(SENSITIVITY.high.nod), trace([...rest, [1800, 11], [2100, 2], [4000, 2]])), 1, "the sensitive setting accepts a smaller nod");
-  assert.equal(count(createNodDetector(SENSITIVITY.normal.nod), trace([...rest, [1800, 11], [2100, 2], [4000, 2]])), 0, "which the normal setting ignores");
+  assert.equal(count(createNodDetector(SENSITIVITY.high.nod), trace([...rest, [1800, 9.5], [2100, 2], [4000, 2]])), 1, "the sensitive setting accepts a smaller nod");
+  assert.equal(count(createNodDetector(SENSITIVITY.normal.nod), trace([...rest, [1800, 9.5], [2100, 2], [4000, 2]])), 0, "which the normal setting ignores");
   assert.equal(count(createNodDetector(SENSITIVITY.low.nod), trace([...rest, [1800, 13], [2100, 2], [4000, 2]])), 0, "the less sensitive setting needs a bigger one");
 });
 
 test("nodding still works after settling into a new posture", () => {
   const list = trace([[0, 0], [1000, 0], [1400, 20], [9000, 20], [9300, 36], [9600, 20], [11000, 20]]);
   assert.equal(count(createNodDetector(), list), 1);
+});
+
+test("a camera that comes on in the middle of a movement finds the resting position quickly", () => {
+  // Tracking starts with the head already tipped 14 degrees down; it comes back up, then nods twice.
+  const list = trace([[0, 14], [300, 0], [1800, 0], [2100, 15], [2400, 0], [3500, 0], [3800, 15], [4100, 0], [5000, 0]]);
+  assert.equal(count(createNodDetector(), list), 2);
 });
 
 test("a turned-away head and a lost face do not count", () => {

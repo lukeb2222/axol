@@ -133,7 +133,7 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
   // Optional hands-free scrolling: a nod or a stuck-out tongue moves on one clip, exactly like a
   // swipe (so a promoted clip that is still being held stays held).
   const handsFree = useHandsFree({ active: !paused && items.length > 0, onNext: () => goTo(live.current.active + 1) });
-  const HF_LABEL = { starting: "Starting camera…", on: "Hands-free on", noface: "Can't see your face", denied: "Camera blocked", nocamera: "No camera found", error: "Hands-free unavailable", off: "Hands-free on" };
+  const HF_LABEL = { starting: "Starting camera…", on: "Hands-free on", noface: "Can't see your face", dark: "Too dark for the camera", stalled: "Camera isn't sending video", denied: "Camera blocked", nocamera: "No camera found", error: "Hands-free unavailable", off: "Hands-free on" };
 
   const toggleSound = useCallback(() => { sound.on = !sound.on; setSoundOn(sound.on); }, []);
   const wantSound = useCallback(() => { sound.on = true; setSoundOn(true); }, []);

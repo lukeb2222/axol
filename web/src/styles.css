@@ -427,3 +427,9 @@ select { background: #16161a; color: var(--fg); border: 1px solid var(--line); b
 .hfdot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
 .hfdot[data-fired]:not([data-fired=""]) { animation: hfFire 0.6s var(--ease-out); }
 @keyframes hfFire { 0% { transform: scale(3.2); opacity: 0.5; } 100% { transform: scale(1); opacity: 1; } }
+.camcheck { display: grid; grid-template-columns: 132px 1fr; gap: 14px; align-items: start; margin-top: 12px; padding: 12px; border-radius: 14px; background: rgba(0,0,0,0.35); border: 1px solid var(--line); }
+.campreview { width: 132px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 10px; background: #000; transform: scaleX(-1); }
+.camok { color: var(--accent); font-weight: 600; font-size: 13px; }
+.camwarn { color: #ffd23f; font-size: 13px; line-height: 1.45; }
+.minis .flash { animation: hfFire 0.6s var(--ease-out); color: var(--accent); }
+@media (max-width: 420px) { .camcheck { grid-template-columns: 1fr; } .campreview { width: 100%; } }

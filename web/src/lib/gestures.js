@@ -4,17 +4,25 @@
 // and yaw in degrees (pitch grows as the head tips down), and, when tongue scrolling is on, how
 // open the jaw is and how many rows of the mouth strip look like tongue (see tongue.js).
 
-/** Degrees of pitch (down is positive) and yaw from the tracker's 4×4 face matrix (column-major). */
+/**
+ * Degrees of pitch (down is positive) and yaw from the tracker's 4×4 face matrix (column-major).
+ * Measured against the head's own up direction as it appears in the picture, so the answer is the
+ * same whether the camera picture is upright, sideways or upside down.
+ */
 export function headAngles(m) {
   const deg = 180 / Math.PI;
-  // The third column is the direction the face points, in the camera's space.
-  return { pitch: Math.atan2(-m[9], m[10]) * deg, yaw: Math.atan2(m[8], m[10]) * deg };
+  const up = [m[4], m[5]], fwd = [m[8], m[9], m[10]]; // second and third columns: the head's up and facing directions
+  const len = Math.hypot(up[0], up[1]) || 1, ux = up[0] / len, uy = up[1] / len;
+  return {
+    pitch: Math.atan2(-(fwd[0] * ux + fwd[1] * uy), fwd[2]) * deg,
+    yaw: Math.atan2(fwd[0] * uy - fwd[1] * ux, fwd[2]) * deg,
+  };
 }
 
 export const SENSITIVITY = {
-  high:   { nod: { down: 7 },  tongue: { minRun: 10 }, margin: 0 },      // small movements count
-  normal: { nod: { down: 10 }, tongue: { minRun: 11 }, margin: 0.005 },
-  low:    { nod: { down: 14 }, tongue: { minRun: 12 }, margin: 0.01 },   // only big, deliberate ones
+  high:   { nod: { down: 6 },  tongue: { minRun: 10 }, margin: 0 },      // small movements count
+  normal: { nod: { down: 8 },  tongue: { minRun: 11 }, margin: 0.005 },
+  low:    { nod: { down: 12 }, tongue: { minRun: 12 }, margin: 0.01 },   // only big, deliberate ones
 };
 
 /**
@@ -23,15 +31,18 @@ export const SENSITIVITY = {
  * nod; neither is turning the head, tipping it up, or a slow change of posture.
  * push(reading) returns true at the moment a nod completes.
  */
-export function createNodDetector({ down = 10, back = 4, maxMs = 1200, cooldownMs = 500, maxYaw = 30 } = {}) {
-  let base = null, state = "idle", t0 = 0, last = 0, lastFire = -Infinity;
+export function createNodDetector({ down = 8, back = 4, maxMs = 1200, cooldownMs = 500, maxYaw = 30, settleMs = 1000 } = {}) {
+  let base = null, state = "idle", t0 = 0, last = 0, lastFire = -Infinity, since = 0;
   const follow = (pitch, dt, tau) => { base += (pitch - base) * (1 - Math.exp(-dt / tau)); };
   return {
     reset() { base = null; state = "idle"; },
     push({ t, pitch, yaw = 0, face = true }) {
       if (!face) { if (t - last > 1500) base = null; state = "idle"; return false; }
       const dt = t - last; last = t;
-      if (base === null || dt > 1500) { base = pitch; state = "idle"; return false; }
+      if (base === null || dt > 1500) { base = pitch; since = t; state = "idle"; return false; }
+      // For the first second the resting position is still being found (the camera may have
+      // come on mid-movement), so it is followed closely and nothing counts yet.
+      if (t - since < settleMs) { follow(pitch, dt, 350); return false; }
       const d = pitch - base;
       if (state === "idle") {
         if (d >= down && Math.abs(yaw) <= maxYaw && t - lastFire >= cooldownMs) { state = "down"; t0 = t; return false; }
