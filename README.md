@@ -140,3 +140,17 @@ Each member has ten single-use invite links (You tab). When one friend joins thr
 finishes setup, the member earns one ad: a YouTube Short of their choice. The owner approves it
 in Owner → Ads; it then runs for 7 days as a labelled, skippable "Sponsored" clip (at most one
 per batch, once a day per viewer) with a button to the creator's channel.
+
+## Hands-free scrolling
+
+Optional, off by default (You tab → Hands-free scrolling). With it on, the reel player moves to
+the next clip when the viewer **nods** (head down and back up) or **sticks their tongue out**.
+It uses the device's front camera: the webcam on a computer, the selfie camera on a phone.
+
+- The picture is analysed in the browser (MediaPipe Face Landmarker, served from axol's own files
+  under `web/public/mediapipe`) and discarded. Nothing is recorded or sent to the server.
+- The camera runs only while Reels is showing; the pill at the top of the player pauses it.
+- Nod = head pitch from the tracker (`web/src/lib/gestures.js`). Tongue = jaw open plus a long
+  pink stretch below the upper lip, measured from the picture (`web/src/lib/tongue.js`); the
+  tracker has no tongue signal of its own, so this one is experimental.
+- `web/test/gestures.test.js` runs both detectors over readings taken from real clips.

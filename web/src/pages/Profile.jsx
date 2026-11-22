@@ -3,6 +3,7 @@ import { api } from "../lib/api.js";
 import { Refresh } from "../components/Icons.jsx";
 import Credit from "../components/Credit.jsx";
 import Invite from "../components/Invite.jsx";
+import HandsFree from "../components/HandsFree.jsx";
 
 export default function Profile({ user, onLogout }) {
   const [p, setP] = useState(null);
@@ -55,6 +56,8 @@ export default function Profile({ user, onLogout }) {
           <div className="stat"><div className="v">{hours < 1 ? `${Math.round(p.stats.watched_ms / 60000)}m` : `${hours.toFixed(1)}h`}</div><div className="k">watched</div></div>
           <div className="stat"><div className="v">{p.stats.likes || 0}</div><div className="k">likes</div></div>
         </div>
+
+        <HandsFree />
 
         <Invite />
 

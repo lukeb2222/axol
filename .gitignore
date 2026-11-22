@@ -4,3 +4,4 @@ web/dist/
 .env
 .DS_Store
 server/keys.env
+web/public/mediapipe/wasm/

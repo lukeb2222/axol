@@ -3,6 +3,7 @@ import { sound } from "../lib/youtube.js";
 import { preloadPoster } from "../lib/posters.js";
 import VideoCard from "./VideoCard.jsx";
 import Toasts from "./Toasts.jsx";
+import { useHandsFree } from "../lib/useHandsFree.js";
 import { Volume, Back } from "./Icons.jsx";
 
 const PREFETCH_AT = 3;
@@ -129,6 +130,11 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
     return () => root.removeEventListener("wheel", onWheel);
   }, [goTo]);
 
+  // Optional hands-free scrolling: a nod or a stuck-out tongue moves on one clip, exactly like a
+  // swipe (so a promoted clip that is still being held stays held).
+  const handsFree = useHandsFree({ active: !paused && items.length > 0, onNext: () => goTo(live.current.active + 1) });
+  const HF_LABEL = { starting: "Starting camera…", on: "Hands-free on", noface: "Can't see your face", denied: "Camera blocked", nocamera: "No camera found", error: "Hands-free unavailable", off: "Hands-free on" };
+
   const toggleSound = useCallback(() => { sound.on = !sound.on; setSoundOn(sound.on); }, []);
   const wantSound = useCallback(() => { sound.on = true; setSoundOn(true); }, []);
 
@@ -239,6 +245,13 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
         <div className="row">
           {onClose && <button className="pill" onClick={onClose} aria-label="Back"><Back /></button>}
           <button className={`pill ${soundOn ? "hot" : ""}`} onClick={toggleSound}><Volume muted={!soundOn || needsGesture} />{!soundOn ? "Sound off" : needsGesture ? "Tap for sound" : "Sound on"}</button>
+          {handsFree.wanted && (
+            <button className={`pill hf ${handsFree.paused ? "" : handsFree.status === "on" ? "hot" : "warn"}`} onClick={handsFree.togglePause} data-testid="hf-pill" data-status={handsFree.paused ? "paused" : handsFree.status} data-count={handsFree.gesture.n} data-last={handsFree.gesture.kind}
+              title={handsFree.paused ? "Turn hands-free scrolling back on" : "Pause hands-free scrolling (turns the camera off)"}>
+              <span className="hfdot" key={handsFree.gesture.n} data-fired={handsFree.gesture.n > 0 ? handsFree.gesture.kind : ""} />
+              {handsFree.paused ? "Hands-free paused" : HF_LABEL[handsFree.status] || "Hands-free on"}
+            </button>
+          )}
         </div>
         <div className="row">
           {title && <span className="pill">{title}</span>}
