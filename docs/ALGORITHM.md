@@ -106,6 +106,8 @@ and fully explainable (every weight is the sum of visible nudges).
 
 ## 7. Ranking (`server/src/ranker.js`)
 
+> The main feed is now ordered by the Reels-style ranker in `server/src/reelsRanker.js`. See [ranking.md](ranking.md). The interest score described here is one term of it, and it still drives steering and search.
+
 Candidates are all tagged clips the user hasn't been served, minus any carrying an `avoid` tag.
 Each gets:
 

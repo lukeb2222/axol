@@ -7,6 +7,7 @@ import { boostTopic, lessTopic } from "./preferences.js";
 import { isAbout, topicKey, prettyTopic, steerableTopics } from "./topics.js";
 import { publicVideo } from "./videoView.js";
 import { saveQueries } from "./ingest.js";
+import { rankForUser } from "./reelsRanker.js";
 
 const round = (x) => Math.round(x * 1000) / 1000;
 
@@ -17,8 +18,8 @@ export function feedItem(impressionId, video, scored) {
 
 /** Rank and record the next batch for this viewer. */
 export function serveBatch(userId, candidates, size = config.ranking.batchSize, opts = {}) {
-  const model = loadUserModel(userId);
-  const picked = rankBatch(candidates, model, size, opts);
+  // Reels-style ranking (reelsRanker.js): affinities, clip quality, freshness, diversity, exploration.
+  const picked = rankForUser(userId, candidates, size, opts);
   const ins = db.prepare("INSERT INTO impressions (id, user_id, video_id, served_at, duration_ms, reason, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
   return transaction(() => picked.map((p) => {
     const id = uid();
