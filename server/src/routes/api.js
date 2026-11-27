@@ -10,6 +10,7 @@ import { referralState, submitAd, sponsoredItem, AdError } from "../referrals.js
 import { adminRouter } from "./admin.js";
 import { serveBatch, steerFeed, SteerError } from "../feedService.js";
 import { boostTopic, muteTopic, removeTopic } from "../preferences.js";
+import { recordEngagement, MAX_BATCH } from "../engagement.js";
 import { runDiscovery, upsertVideos, tagPending, saveQueries } from "../ingest.js";
 import { learnFromImpression, safeTags } from "../learner.js";
 import { itemFromUrl, sourceStatus, SOURCES } from "../sources/index.js";
@@ -198,6 +199,19 @@ apiRouter.post("/feed/steer", (req, res) => {
     if (e instanceof SteerError) return res.status(400).json({ error: e.message });
     throw e;
   }
+});
+
+/**
+ * Batched engagement log for the feed ranking. Body: { events: [{ impressionId, type, ... }] }
+ *  view       { watchedMs, durationMs, completion, rewatches, quickSkip } — once, when the clip leaves the screen
+ *  like / unlike / share / copy_link / save / unsave / hide
+ * Up to MAX_BATCH events per call. Repeats are logged but counted once.
+ */
+apiRouter.post("/engagement", (req, res) => {
+  const events = req.body?.events;
+  if (!Array.isArray(events)) return res.status(400).json({ error: "events must be a list" });
+  if (events.length > MAX_BATCH) return res.status(413).json({ error: `at most ${MAX_BATCH} events per batch` });
+  res.json({ ok: true, ...recordEngagement(req.user.id, events) });
 });
 
 /* ------------------------------------- import ----------------------------------- */

@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
 import { config } from "./config.js";
+import { runMigrations } from "./migrations.js";
 
 fs.mkdirSync(path.dirname(config.dbPath), { recursive: true });
 
@@ -183,6 +184,9 @@ for (const [name, ddl] of [
   ["last_seen_at", "INTEGER NOT NULL DEFAULT 0"],
   ["referred_by", "TEXT"],                          // the member whose invite link they joined with
 ]) if (!userCols.has(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${ddl}`);
+
+// Versioned migrations (see migrations.js) run after the base schema above.
+runMigrations(db);
 
 export const now = () => Date.now();
 export const uid = () => crypto.randomUUID();

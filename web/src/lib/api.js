@@ -1,3 +1,5 @@
+import { mirrorBeacon } from "./engagement.js";
+
 const TOKEN_KEY = "axol_token";
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
 export const setToken = (t) => (t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY));
@@ -61,6 +63,7 @@ export const api = {
 
 /** Fire-and-forget event that survives page unload. */
 export function beacon(body) {
+  mirrorBeacon(body); // also feeds the batched engagement log used by the feed ranking
   const t = getToken();
   try {
     return fetch("/api/events", {
