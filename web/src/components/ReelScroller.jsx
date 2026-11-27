@@ -3,10 +3,12 @@ import { sound } from "../lib/youtube.js";
 import { preloadPoster } from "../lib/posters.js";
 import VideoCard from "./VideoCard.jsx";
 import Toasts from "./Toasts.jsx";
+import GestureFlash from "./GestureFlash.jsx";
+import GestureHud from "./GestureHud.jsx";
 import { useHandsFree } from "../lib/useHandsFree.js";
 import { rememberUndo, undoTarget } from "../lib/handsFreeUndo.js";
 import { playerCommands, SHORTCUTS } from "../lib/playerCommands.js";
-
+import { api, beacon } from "../lib/api.js";
 import { Volume, Back } from "./Icons.jsx";
 
 const PREFETCH_AT = 3;
@@ -49,6 +51,10 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
   const [released, setReleased] = useState({});
   const [nudge, setNudge] = useState(0);
   const [undo, setUndo] = useState(null);
+  const [flash, setFlash] = useState(null);
+  const [laughToday, setLaughToday] = useState(0);
+  const hudCanvas = useRef(null);
+  const laughed = useRef(new Set());
   const cur = items[active];
   const locked = !overlay && !!cur?.promo?.mustWatch && !released[cur.impressionId];
   const release = useCallback((impressionId) => setReleased((r) => (r[impressionId] ? r : { ...r, [impressionId]: true })), []);
@@ -139,13 +145,52 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
     return () => root.removeEventListener("wheel", onWheel);
   }, [goTo]);
 
-  // Optional hands-free scrolling: a nod or a stuck-out tongue moves on one clip, exactly like a
-  // swipe (so a promoted clip that is still being held stays held).
+  // Optional hands-free control: nods and a stuck-out tongue move on, a tilt goes back, a wink
+  // likes, raised brows pause, and a laugh saves the clip. A promoted clip that is still being
+  // held stays held, just as it would for a swipe.
+  const flashGesture = useCallback((kind, label) => {
+    const token = { kind, label, n: Date.now() };
+    setFlash(token);
+    setTimeout(() => setFlash((f) => (f && f.n === token.n ? null : f)), 900);
+  }, []);
+  useEffect(() => {
+    api.laughs().then((s) => { if (Number.isFinite(s?.today)) setLaughToday(s.today); }).catch(() => {});
+  }, []);
   const handsFree = useHandsFree({
     active: !paused && items.length > 0,
-    onNext: () => {
+    onFrame: (frame) => {
+      const c = hudCanvas.current;
+      if (!c) return;
+      if (c.width !== frame.width || c.height !== frame.height) { c.width = frame.width; c.height = frame.height; }
+      c.getContext("2d").drawImage(frame, 0, 0);
+    },
+    onGesture: (kind) => {
       const from = live.current.active;
-      if (goTo(from + 1, "gesture")) setUndo(rememberUndo(from, from + 1));
+      const item = live.current.items[from];
+      if (kind === "nod" || kind === "tongue") {
+        if (goTo(from + 1, "gesture")) { setUndo(rememberUndo(from, from + 1)); flashGesture(kind); }
+        return;
+      }
+      if (kind === "tilt") {
+        if (goTo(from - 1, "gesture")) { setUndo(rememberUndo(from, from - 1)); flashGesture("tilt"); }
+        return;
+      }
+      if (kind === "wink") {
+        playerCommands().gestureLike?.();
+        flashGesture("wink");
+        return;
+      }
+      if (kind === "brow") {
+        const nowPaused = playerCommands().togglePause?.();
+        flashGesture(nowPaused ? "brow" : "brow-play");
+        return;
+      }
+      if (kind === "laugh" && item && !laughed.current.has(item.impressionId)) {
+        laughed.current.add(item.impressionId);
+        beacon({ impressionId: item.impressionId, type: "laugh", tz: -new Date().getTimezoneOffset() })
+          .then((r) => { if (Number.isFinite(r?.today)) setLaughToday(r.today); else setLaughToday((n) => n + 1); });
+        flashGesture("laugh");
+      }
     },
   });
   useEffect(() => {
@@ -311,6 +356,8 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
           </div>
         </div>
       )}
+      {handsFree.hud && <GestureHud canvasRef={hudCanvas} status={handsFree.status} gesture={handsFree.gesture} />}
+      {flash && <GestureFlash kind={flash.kind} label={flash.label} today={laughToday} />}
       <Toasts items={toasts} />
 
     </div>

@@ -176,6 +176,9 @@ db.exec("UPDATE videos SET media_fails = 0 WHERE media_file = '' AND media_src L
 const impCols = new Set(db.prepare("PRAGMA table_info(impressions)").all().map((c) => c.name));
 // How long the clip took to show its first frame after it became the active one (0 = never did).
 if (!impCols.has("start_ms")) db.exec("ALTER TABLE impressions ADD COLUMN start_ms INTEGER NOT NULL DEFAULT 0");
+// A face-detected laugh on this clip. Only the clip is stored, never any face data.
+if (!impCols.has("laughed")) db.exec("ALTER TABLE impressions ADD COLUMN laughed INTEGER NOT NULL DEFAULT 0");
+if (!impCols.has("laughed_at")) db.exec("ALTER TABLE impressions ADD COLUMN laughed_at INTEGER NOT NULL DEFAULT 0");
 
 const userCols = new Set(db.prepare("PRAGMA table_info(users)").all().map((c) => c.name));
 for (const [name, ddl] of [

@@ -19,6 +19,7 @@ export function engagementScore(imp) {
   if (watched < L.quickSkipMs && completion < 0.25) score = -1; // hard skip
   else score = clamp((completion - L.neutralCompletion) * 2, -1, 1.2);
   if (imp.liked) score += 0.6;
+  if (imp.laughed) score += 0.35;
   if (imp.shared) score += 0.5;
   if (imp.replays > 0) score += 0.2 * Math.min(3, imp.replays);
   return clamp(score, -1.5, 2);

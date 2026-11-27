@@ -6,6 +6,7 @@ import { safeTags, completionOf } from "../learner.js";
 import { publicVideo } from "../videoView.js";
 import { searchCatalog, hydrate, broaden, discoveryOptions } from "../search.js";
 import { track } from "../activity.js";
+import { laughStats } from "../laughs.js";
 
 export const insightsRouter = Router();
 
@@ -100,6 +101,7 @@ insightsRouter.get("/dashboard", (req, res) => {
       completion: Math.round((p.completionSum / p.clips) * 100),
     })).sort((a, b) => b.minutes - a.minutes),
     landing, skipping, liked,
+    laughs: laughStats(userId, { tzMinutes: Number(req.query.tz) || 0 }),
     taste: {
       summary: prof?.summary || "", tunes: prof?.synth_count || 0,
       interests: interests.length, learned: interests.filter((i) => i.origin === "learned").length,
@@ -107,6 +109,10 @@ insightsRouter.get("/dashboard", (req, res) => {
     },
     insights,
   });
+});
+
+insightsRouter.get("/laughs", (req, res) => {
+  res.json(laughStats(req.user.id, { tzMinutes: Number(req.query.tz) || 0 }));
 });
 
 /* ------------------------------------ search ------------------------------------ */

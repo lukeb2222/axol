@@ -21,6 +21,7 @@ import { publicVideo } from "../videoView.js";
 import { getLibrary, setLiked } from "../library.js";
 import { serveMedia, mediaStats } from "../media.js";
 import { apifyEnabled, apifyRunsToday } from "../sources/apify.js";
+import { recordLaugh, laughStats } from "../laughs.js";
 
 export const apiRouter = Router();
 
@@ -91,7 +92,7 @@ apiRouter.get("/feed", async (req, res) => {
 /**
  * Body: { impressionId, type, ... }
  *  progress  { watchedMs, durationMs, replays }       — sent every ~2s while the clip is on screen
- *  like / unlike / share / hide / skip
+ *  like / unlike / share / hide / skip / laugh
  *  finish    { watchedMs, durationMs, replays, skipped } — card left the screen; triggers learning
  */
 apiRouter.post("/events", async (req, res) => {
@@ -116,6 +117,9 @@ apiRouter.post("/events", async (req, res) => {
     case "unlike":
       setLiked(userId, imp.video_id, type === "like");
       return res.json({ ok: true });
+    case "laugh":
+      recordLaugh(imp);
+      return res.json({ ok: true, ...laughStats(userId, { tzMinutes: Number(b.tz) || 0 }) });
     case "share":
       q.run("UPDATE impressions SET shared = 1, updated_at = ? WHERE id = ?", now(), imp.id);
       return res.json({ ok: true });
