@@ -433,3 +433,6 @@ select { background: #16161a; color: var(--fg); border: 1px solid var(--line); b
 .camwarn { color: #ffd23f; font-size: 13px; line-height: 1.45; }
 .minis .flash { animation: hfFire 0.6s var(--ease-out); color: var(--accent); }
 @media (max-width: 420px) { .camcheck { grid-template-columns: 1fr; } .campreview { width: 100%; } }
+
+.textbtn { display: inline; padding: 0; margin: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.textbtn:hover { color: var(--fg); }

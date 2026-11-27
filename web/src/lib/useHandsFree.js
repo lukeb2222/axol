@@ -1,20 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { getSettings, setSettings, subscribeSettings } from "./settings.js";
-import { createNodDetector, createTongueDetector, SENSITIVITY } from "./gestures.js";
+import { createNodDetector, createTongueDetector, SENSITIVITY, TONGUE_HOLD } from "./gestures.js";
 import { startHeadTracker } from "./headTracker.js";
 
 /**
  * Start the camera and turn its readings into gestures. `nod` / `tongue` choose what to look for.
  * Returns a function that stops everything.
  */
-export function watchGestures({ nod, tongue, sensitivity, cameraId, onGesture, onStatus, onReading, onFrame }) {
+export function watchGestures({ nod, tongue, sensitivity, cameraId, tongueCalib, tongueHold, onGesture, onStatus, onReading, onFrame }) {
   const level = SENSITIVITY[sensitivity] || SENSITIVITY.normal;
   const nods = nod ? createNodDetector(level.nod) : null;
-  const tongues = tongue ? createTongueDetector(level.tongue) : null;
+  const tongues = tongue ? createTongueDetector({
+    ...level.tongue,
+    holdMs: TONGUE_HOLD[tongueHold] ?? TONGUE_HOLD.normal,
+    calib: tongueCalib,
+  }) : null;
   return startHeadTracker({
     tongue, margin: level.margin, deviceId: cameraId, onStatus, onFrame,
     onReading: (r) => {
-      onReading?.(r, level);
+      onReading?.(r, level, tongues);
       if (window.__axolDebug) window.__axolDebug.push(r);
       if (nods?.push(r)) onGesture("nod");
       if (tongues?.push(r)) onGesture("tongue");
@@ -37,14 +41,14 @@ export function useHandsFree({ active, onNext }) {
 
   const wanted = settings.nod || settings.tongue;
   const running = wanted && !settings.handsFreePaused && active;
-  const { nod, tongue, sensitivity, cameraId } = settings;
+  const { nod, tongue, sensitivity, cameraId, tongueCalib, tongueHold } = settings;
   useEffect(() => {
     if (!running) { setStatus("off"); return; }
     return watchGestures({
-      nod, tongue, sensitivity, cameraId, onStatus: setStatus,
+      nod, tongue, sensitivity, cameraId, tongueCalib, tongueHold, onStatus: setStatus,
       onGesture: (kind) => { setGesture((g) => ({ n: g.n + 1, kind })); next.current?.(kind); },
     });
-  }, [running, nod, tongue, sensitivity, cameraId]);
+  }, [running, nod, tongue, sensitivity, cameraId, tongueCalib, tongueHold]);
 
   return { wanted, paused: settings.handsFreePaused, status, gesture, togglePause: () => setSettings({ handsFreePaused: !settings.handsFreePaused }) };
 }

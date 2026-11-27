@@ -25,6 +25,26 @@ export const SENSITIVITY = {
   low:    { nod: { down: 12 }, tongue: { minRun: 12 }, margin: 0.01 },   // only big, deliberate ones
 };
 
+// How long the tongue must stay out before it counts as a scroll.
+export const TONGUE_HOLD = { quick: 110, normal: 160, steady: 280 };
+
+/**
+ * How many pink rows are needed to count as a tongue. With no calibration this is at least
+ * `minRun`, and is raised if this face already looks pink with the mouth shut. After a
+ * calibration it sits halfway between the person's rest and their tongue-out reading, so a
+ * shorter tongue still works when it is clearly different from rest.
+ */
+export function tongueNeed({ minRun = 11, rows = 14, rest = null, calib = null } = {}) {
+  let need = minRun;
+  if (calib && Number.isFinite(calib.rest) && Number.isFinite(calib.out) && calib.out - calib.rest >= 3) {
+    need = Math.round(calib.rest + Math.max(3, (calib.out - calib.rest) * 0.5));
+    need = Math.max(need, Math.round(calib.rest) + 3, 6);
+  } else if (rest != null) {
+    need = Math.max(minRun, Math.round(rest) + 3);
+  }
+  return Math.min(need, rows);
+}
+
 /**
  * A nod: the head tips down by at least `down` degrees from where it has been resting and comes
  * back within `maxMs`. Looking down and staying there (at a keyboard, a phone, a plate) is not a
@@ -68,27 +88,56 @@ export function createNodDetector({ down = 8, back = 4, maxMs = 1200, cooldownMs
  * Tongue out: the jaw is open and a long stretch below the upper lip looks like tongue, steadily
  * for `holdMs`. Fires once per stick-out. A mouth that is merely open (talking, laughing, yawning)
  * shows teeth and the dark inside of the mouth, which break the stretch.
+ *
+ * Readings are smoothed with a short, time-based average so a single noisy frame cannot trip it,
+ * and leaving "out" is slightly easier than entering (hysteresis) so it does not flicker at the
+ * threshold. Rapid open/close of the jaw (talking) is ignored. `calib: { rest, out }` from a
+ * guided calibration replaces the automatic rest estimate.
  * push(reading) returns true at the moment it counts.
  */
-export function createTongueDetector({ minRun = 11, minJaw = 0.12, holdMs = 160, rearmMs = 250, cooldownMs = 900, rows = 14 } = {}) {
-  let since = null, fired = false, offSince = null, lastFire = -Infinity, rest = null;
+export function createTongueDetector({
+  minRun = 11, minJaw = 0.12, holdMs = 160, rearmMs = 250, cooldownMs = 900, rows = 14,
+  smoothMs = 70, offSlack = 2, jawOff = 0.08, calib = null,
+} = {}) {
+  let since = null, fired = false, offSince = null, lastFire = -Infinity, rest = calib?.rest ?? null;
+  let last = 0, sRun = null, sJaw = null;
+  const hist = [];
+  const follow = (cur, next, dt, tau) => cur + (next - cur) * (1 - Math.exp(-dt / Math.max(1, tau)));
+  const isTalking = (t, jaw) => {
+    hist.push({ t, jaw });
+    while (hist.length && t - hist[0].t > 500) hist.shift();
+    if (hist.length < 3) return false;
+    let crossings = 0;
+    for (let i = 1; i < hist.length; i++) {
+      if ((hist[i - 1].jaw >= minJaw) !== (hist[i].jaw >= minJaw)) crossings += 1;
+    }
+    return crossings >= 2;
+  };
   return {
-    reset() { since = null; fired = false; offSince = null; },
+    reset() { since = null; fired = false; offSince = null; sRun = null; sJaw = null; hist.length = 0; if (!calib) rest = null; },
+    need() { return tongueNeed({ minRun, rows, rest, calib }); },
     push({ t, run = 0, jaw = 0, face = true }) {
-      if (!face) { since = null; return false; }
+      if (!face) { since = null; sRun = null; sJaw = null; return false; }
+      const dt = last ? Math.max(0, Math.min(200, t - last)) : 80;
+      last = t;
+      sRun = sRun == null ? run : follow(sRun, run, dt, smoothMs);
+      sJaw = sJaw == null ? jaw : follow(sJaw, jaw, dt, 50);
       // What this face looks like with the mouth shut: some faces read pink there anyway, and
       // for them the bar is raised (past the top of the scale if need be, so it never misfires).
-      if (jaw < 0.05) rest = rest === null ? run : rest + (run - rest) * 0.1;
-      const need = Math.max(minRun, rest === null ? 0 : Math.round(rest) + 3);
-      const out = jaw >= minJaw && run >= need && need <= rows;
-      if (!out) {
+      if (!calib && sJaw < 0.05) rest = rest === null ? run : follow(rest, run, dt, 400);
+      const need = tongueNeed({ minRun, rows, rest, calib });
+      const talking = isTalking(t, jaw);
+      const on = sJaw >= minJaw && sRun >= need && need <= rows && !talking;
+      const still = sJaw >= jawOff && sRun >= Math.max(0, need - offSlack);
+      if (!still) {
         since = null;
         if (fired) { offSince ??= t; if (t - offSince >= rearmMs) { fired = false; offSince = null; } }
         return false;
       }
+      if (!on && !fired) { since = null; return false; }
       offSince = null;
       since ??= t;
-      if (!fired && t - since >= holdMs && t - lastFire >= cooldownMs) { fired = true; lastFire = t; return true; }
+      if (!fired && on && t - since >= holdMs && t - lastFire >= cooldownMs) { fired = true; lastFire = t; return true; }
       return false;
     },
   };

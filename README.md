@@ -95,15 +95,17 @@ GET  /api/search/suggest        GET /api/dashboard?tz=<minutes east of UTC>
 ## Tests
 
 ```bash
-npm test     # scoring and ranking, plus relevance regressions on a fixed fixture catalog:
-             # search precision, quota exhaustion, explanation accuracy, steering a loaded queue
+npm test     # server: scoring, ranking and relevance regressions on a fixed fixture catalog
+             # web: nod and tongue detectors over real clips, plus calibration and undo helpers
 ```
 
 ## Deploy (Netlify + Railway)
 
 Netlify serves the web app; the Express/SQLite server runs on Railway with a persistent volume.
 
-1. **Railway**: New Project → Deploy from GitHub → this repo. Settings → Root Directory `server`.
+1. **Railway**: New Project → Deploy from GitHub → this repo. Leave the root directory at the
+   repo root (so the web app is built and `npm start` runs the server). Root Directory `server`
+   is only for a server-only service.
    Variables: `ANTHROPIC_API_KEY`, `YOUTUBE_API_KEY`, `AXOL_DB_PATH=/data/axol.sqlite`.
    Add a Volume mounted at `/data`. Generate a public domain; note the URL.
 2. **Netlify**: Add new site → Import from GitHub → this repo. `netlify.toml` sets the build.

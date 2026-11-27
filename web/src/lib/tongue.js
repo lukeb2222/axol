@@ -45,15 +45,30 @@ export function tongueFeatures(px, lm, margin = 0.005) {
     }
     rows.push({ rg: rg / COLS, gb: gb / COLS, l: l / COLS });
   }
-  // How many rows in a row, anywhere in the strip, look like tongue: lit (not the dark inside of
-  // the mouth) and pinker than the cheeks (not teeth, not skin).
   const base = skin.rg - skin.gb;
-  let run = 0, cur = 0;
+  const isTongue = (r) => r.l > 0.6 * skin.l && r.rg - r.gb >= base + margin;
+
+  // Longest stretch anywhere (kept for inspection). A real tongue comes out of the mouth, so the
+  // value used for scrolling is the stretch that starts at or just below the upper lip — a pink
+  // patch on the chin alone does not count. Up to two non-matching rows at the very top are
+  // skipped so a dark lip edge does not hide a tongue immediately below.
+  let run = 0, cur = 0, strength = 0, nPink = 0;
   for (const r of rows) {
-    cur = r.l > 0.6 * skin.l && r.rg - r.gb >= base + margin ? cur + 1 : 0;
-    if (cur > run) run = cur;
+    if (isTongue(r)) {
+      cur += 1;
+      if (cur > run) run = cur;
+      strength += (r.rg - r.gb) - base;
+      nPink += 1;
+    } else {
+      cur = 0;
+    }
   }
+  let start = 0;
+  while (start < 2 && start < rows.length && !isTongue(rows[start])) start += 1;
+  let fromLip = 0;
+  while (start + fromLip < rows.length && isTongue(rows[start + fromLip])) fromLip += 1;
+
   // How far apart the lips are, as a share of the face's height.
   const open = Math.hypot(lm[LOWER_LIP_IN].x - top.x, lm[LOWER_LIP_IN].y - top.y) / Math.hypot(chin.x - lm[FOREHEAD].x, chin.y - lm[FOREHEAD].y);
-  return { run, open, rows: ROWS };
+  return { run: fromLip, anywhere: run, open, strength: nPink ? strength / nPink : 0, rows: ROWS };
 }

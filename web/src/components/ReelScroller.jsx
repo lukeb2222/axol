@@ -4,6 +4,7 @@ import { preloadPoster } from "../lib/posters.js";
 import VideoCard from "./VideoCard.jsx";
 import Toasts from "./Toasts.jsx";
 import { useHandsFree } from "../lib/useHandsFree.js";
+import { rememberUndo, undoTarget } from "../lib/handsFreeUndo.js";
 import { Volume, Back } from "./Icons.jsx";
 
 const PREFETCH_AT = 3;
@@ -42,6 +43,7 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
   // A promoted clip the viewer has not watched through yet holds the feed until it has played.
   const [released, setReleased] = useState({});
   const [nudge, setNudge] = useState(0);
+  const [undo, setUndo] = useState(null);
   const cur = items[active];
   const locked = !overlay && !!cur?.promo?.mustWatch && !released[cur.impressionId];
   const release = useCallback((impressionId) => setReleased((r) => (r[impressionId] ? r : { ...r, [impressionId]: true })), []);
@@ -84,14 +86,15 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
   }, []);
 
   live.current.locked = locked;
-  const goTo = useCallback((idx) => {
+  const goTo = useCallback((idx, origin = "user") => {
     const root = feedRef.current;
-    if (!root) return;
-    if (live.current.locked && idx > live.current.active) { setNudge((n) => n + 1); return; }
+    if (!root) return false;
+    if (live.current.locked && idx > live.current.active) { setNudge((n) => n + 1); return false; }
     const to = Math.max(0, Math.min(live.current.count - 1, idx));
     const target = to * root.clientHeight;
     const start = root.scrollTop, dist = target - start;
-    if (Math.abs(dist) < 2) return;
+    if (Math.abs(dist) < 2) return false;
+    if (origin !== "gesture" && origin !== "undo") setUndo(null);
     setActive(to); // wheel and keyboard know their destination: start that clip immediately
     const g = glide.current;
     cancelAnimationFrame(g.raf);
@@ -105,6 +108,7 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
       else { root.scrollTop = target; root.style.scrollSnapType = ""; g.running = false; }
     };
     g.raf = requestAnimationFrame(step);
+    return true;
   }, []);
 
   // Wheel / trackpad: one deliberate gesture = one clip, however much inertia follows it.
@@ -132,7 +136,20 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
 
   // Optional hands-free scrolling: a nod or a stuck-out tongue moves on one clip, exactly like a
   // swipe (so a promoted clip that is still being held stays held).
-  const handsFree = useHandsFree({ active: !paused && items.length > 0, onNext: () => goTo(live.current.active + 1) });
+  const handsFree = useHandsFree({
+    active: !paused && items.length > 0,
+    onNext: () => {
+      const from = live.current.active;
+      if (goTo(from + 1, "gesture")) setUndo(rememberUndo(from, from + 1));
+    },
+  });
+  useEffect(() => {
+    if (!undo) return;
+    const ms = undo.until - Date.now();
+    if (ms <= 0) { setUndo(null); return; }
+    const id = setTimeout(() => setUndo(null), ms);
+    return () => clearTimeout(id);
+  }, [undo]);
   const HF_LABEL = { starting: "Starting camera…", on: "Hands-free on", noface: "Can't see your face", dark: "Too dark for the camera", stalled: "Camera isn't sending video", denied: "Camera blocked", nocamera: "No camera found", error: "Hands-free unavailable", off: "Hands-free on" };
 
   const toggleSound = useCallback(() => { sound.on = !sound.on; setSoundOn(sound.on); }, []);
@@ -250,6 +267,11 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
               title={handsFree.paused ? "Turn hands-free scrolling back on" : "Pause hands-free scrolling (turns the camera off)"}>
               <span className="hfdot" key={handsFree.gesture.n} data-fired={handsFree.gesture.n > 0 ? handsFree.gesture.kind : ""} />
               {handsFree.paused ? "Hands-free paused" : HF_LABEL[handsFree.status] || "Hands-free on"}
+            </button>
+          )}
+          {undoTarget(undo) != null && (
+            <button className="pill hot" data-testid="hf-undo" onClick={() => { const to = undoTarget(undo); setUndo(null); if (to != null) goTo(to, "undo"); }}>
+              Undo
             </button>
           )}
         </div>

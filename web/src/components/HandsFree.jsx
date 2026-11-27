@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { getSettings, setSettings, subscribeSettings } from "../lib/settings.js";
 import { watchGestures } from "../lib/useHandsFree.js";
 import { listCameras } from "../lib/headTracker.js";
+import { tongueNeed } from "../lib/gestures.js";
+import { createTongueCalibrator } from "../lib/tongueCalib.js";
 
 const STATUS = {
   starting: "Starting the camera…",
@@ -25,15 +27,14 @@ function CameraCheck({ settings }) {
   const [seen, setSeen] = useState({ nod: 0, tongue: 0, last: "" });
   const [read, setRead] = useState(null);
   const [cameras, setCameras] = useState([]);
-  const { sensitivity, cameraId } = settings;
-  // With nothing switched on yet, the check looks for both.
+  const { sensitivity, cameraId, tongueCalib, tongueHold } = settings;
   const nod = settings.nod || !settings.tongue, tongue = settings.tongue || !settings.nod;
 
   useEffect(() => {
     let lastShown = 0;
     setStatus("starting"); setRead(null);
     return watchGestures({
-      nod, tongue, sensitivity, cameraId,
+      nod, tongue, sensitivity, cameraId, tongueCalib, tongueHold,
       onStatus: (s) => { setStatus(s); if (s === "on") listCameras().then(setCameras); },
       onGesture: (kind) => setSeen((v) => ({ ...v, [kind]: v[kind] + 1, last: kind })),
       onFrame: (frame) => {
@@ -42,13 +43,14 @@ function CameraCheck({ settings }) {
         if (c.width !== frame.width || c.height !== frame.height) { c.width = frame.width; c.height = frame.height; }
         c.getContext("2d").drawImage(frame, 0, 0);
       },
-      onReading: (r, level) => {
+      onReading: (r, level, detector) => {
         if (r.t - lastShown < 200) return;
         lastShown = r.t;
-        setRead(r.face ? { pitch: Math.round(r.pitch), jaw: r.jaw, run: r.run, need: level.tongue.minRun } : null);
+        const need = detector?.need?.() ?? tongueNeed({ ...level.tongue, calib: tongueCalib });
+        setRead(r.face ? { pitch: Math.round(r.pitch), jaw: r.jaw, run: r.run, need } : null);
       },
     });
-  }, [nod, tongue, sensitivity, cameraId]);
+  }, [nod, tongue, sensitivity, cameraId, tongueCalib, tongueHold]);
 
   return (
     <div className="camcheck" data-testid="camcheck" data-status={status}>
@@ -63,7 +65,7 @@ function CameraCheck({ settings }) {
         )}
         {status === "on" && read && tongue && (
           <div className="tiny" data-testid="tongue-read">
-            Mouth {read.jaw >= 0.12 ? "open" : "closed"} · tongue reading <strong style={{ color: "var(--fg)" }}>{read.run ?? 0}</strong> of 14 (counts at {read.need}, with the mouth open)
+            Mouth {read.jaw >= 0.12 ? "open" : "closed"} · tongue reading <strong style={{ color: "var(--fg)" }}>{read.run ?? 0}</strong> of 14 (counts at {read.need}{tongueCalib ? ", from your calibration" : ""}, with the mouth open)
             <div className="track" style={{ height: 6, borderRadius: 999, background: "#1c1c22", overflow: "hidden", marginTop: 4 }}><div style={{ height: "100%", width: `${((read.run ?? 0) / 14) * 100}%`, background: (read.run ?? 0) >= read.need && read.jaw >= 0.12 ? "var(--accent)" : "var(--fg-3)" }} /></div>
           </div>
         )}
@@ -80,7 +82,84 @@ function CameraCheck({ settings }) {
   );
 }
 
+const CALIB_COPY = {
+  starting: "Starting the camera…",
+  closed: "Keep your mouth closed and still…",
+  out: "Now stick your tongue out and hold it…",
+  done: "Calibrated. Tongue scrolling will use your reading from now on.",
+  fail: "Couldn't tell your tongue apart from your mouth at rest. Try better light, hold your tongue out clearly, then try again.",
+};
+
+/**
+ * Two short holds — mouth closed, then tongue out — so the threshold is set for this face
+ * and this lighting, rather than a one-size-fits-all number of pink rows.
+ */
+function TongueCalibrate({ settings, onDone }) {
+  const canvasRef = useRef(null);
+  const cal = useRef(null);
+  const [status, setStatus] = useState("starting");
+  const [step, setStep] = useState("closed");
+  const [progress, setProgress] = useState(0);
+  const [result, setResult] = useState(null);
+  const { sensitivity, cameraId, tongueHold } = settings;
+
+  useEffect(() => {
+    cal.current = createTongueCalibrator();
+    setStep("closed"); setProgress(0); setResult(null); setStatus("starting");
+    return watchGestures({
+      nod: false, tongue: true, sensitivity, cameraId, tongueHold,
+      onStatus: setStatus,
+      onFrame: (frame) => {
+        const c = canvasRef.current;
+        if (!c) return;
+        if (c.width !== frame.width || c.height !== frame.height) { c.width = frame.width; c.height = frame.height; }
+        c.getContext("2d").drawImage(frame, 0, 0);
+      },
+      onReading: (r) => {
+        const s = cal.current.push(r);
+        setStep(s.step);
+        setProgress(s.progress);
+        if (s.result && s.step === "done") {
+          setResult(s.result);
+          setSettings({ tongueCalib: { rest: s.result.rest, out: s.result.out } });
+        } else if (s.result) {
+          setResult(s.result);
+        }
+      },
+    });
+  }, [sensitivity, cameraId, tongueHold]);
+
+  const blocked = status !== "on" && status !== "starting" && step === "closed" && progress === 0;
+  const copy = blocked ? (STATUS[status] || status) : (step === "closed" && status !== "on" && status !== "starting" ? (STATUS[status] || status) : CALIB_COPY[status === "starting" && step === "closed" ? "starting" : step]);
+
+  return (
+    <div className="camcheck" data-testid="tongue-calib" data-step={step} data-status={status}>
+      <canvas ref={canvasRef} className="campreview" width="4" height="3" aria-label="What the camera sees" />
+      <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
+        <div className={step === "done" ? "camok" : step === "fail" || blocked ? "camwarn" : "camok"} role="status">{copy}</div>
+        {(step === "closed" || step === "out") && status === "on" && (
+          <div className="track" style={{ height: 8, borderRadius: 999, background: "#1c1c22", overflow: "hidden" }} data-testid="calib-progress">
+            <div style={{ height: "100%", width: `${Math.round(progress * 100)}%`, background: "var(--accent)", transition: "width 0.15s linear" }} />
+          </div>
+        )}
+        {step === "done" && result && (
+          <div className="tiny">At rest your reading is {result.rest}; with your tongue out it is {result.out}. It will count at {result.need}.</div>
+        )}
+        {step === "fail" && result && (
+          <div className="tiny">At rest: {result.rest}. Tongue out: {result.out}. They need to be further apart.</div>
+        )}
+        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+          {(step === "done" || step === "fail") && <button className="btn sm ghost" onClick={() => onDone?.()} data-testid="calib-close">{step === "done" ? "Done" : "Close"}</button>}
+          {(step === "fail") && <button className="btn sm" onClick={() => { cal.current?.reset(); setStep("closed"); setProgress(0); setResult(null); }} data-testid="calib-retry">Try again</button>}
+          {step !== "done" && step !== "fail" && <button className="btn sm ghost" onClick={() => onDone?.()} data-testid="calib-cancel">Cancel</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const LEVELS = [["high", "Small movements"], ["normal", "Normal"], ["low", "Big movements only"]];
+const HOLDS = [["quick", "Quick"], ["normal", "Normal"], ["steady", "Hold a little longer"]];
 
 function Switch({ on, onChange, label, hint, testid }) {
   return (
@@ -96,6 +175,7 @@ function Switch({ on, onChange, label, hint, testid }) {
 export default function HandsFree() {
   const [s, setS] = useState(getSettings);
   const [checking, setChecking] = useState(false);
+  const [calibrating, setCalibrating] = useState(false);
   useEffect(() => subscribeSettings(setS), []);
   const canCamera = !!navigator.mediaDevices?.getUserMedia;
   // Turning a gesture on also un-pauses hands-free, so the switch always does what it says.
@@ -110,7 +190,7 @@ export default function HandsFree() {
       {!canCamera && <div className="error" style={{ marginBottom: 10 }}>This browser doesn't give axol a camera, so these can't be used here.</div>}
       <div className="switches">
         <Switch on={s.nod} onChange={(v) => set({ nod: v })} label="Nod to scroll" hint="Nod your head down and back up." testid="switch-nod" />
-        <Switch on={s.tongue} onChange={(v) => set({ tongue: v })} label="Tongue to scroll" hint="Stick your tongue out for a moment. Experimental: works best in good light." testid="switch-tongue" />
+        <Switch on={s.tongue} onChange={(v) => set({ tongue: v })} label="Tongue to scroll" hint="Stick your tongue out for a moment. Works best after a quick calibration, in good light." testid="switch-tongue" />
       </div>
       {any && (
         <div style={{ marginTop: 14 }}>
@@ -120,10 +200,30 @@ export default function HandsFree() {
           </div>
         </div>
       )}
-      <div style={{ marginTop: 14 }}>
-        <button className="btn sm ghost" onClick={() => setChecking((c) => !c)} disabled={!canCamera} data-testid="camcheck-toggle">{checking ? "Stop the camera check" : "Check my camera"}</button>
-        {checking && <CameraCheck settings={s} />}
+      {s.tongue && (
+        <div style={{ marginTop: 14 }}>
+          <div className="tiny" style={{ marginBottom: 6 }}>How long to hold your tongue out</div>
+          <div className="chips" role="radiogroup" aria-label="Tongue hold">
+            {HOLDS.map(([id, label]) => <button key={id} role="radio" aria-checked={s.tongueHold === id} className={`chip ${s.tongueHold === id ? "on" : ""}`} data-testid={`hold-${id}`} onClick={() => setSettings({ tongueHold: id })}>{label}</button>)}
+          </div>
+        </div>
+      )}
+      {s.tongue && s.tongueCalib && !calibrating && (
+        <p className="tiny" style={{ margin: "12px 0 0" }} data-testid="calib-summary">
+          Calibrated for you: counts at {tongueNeed({ calib: s.tongueCalib })} of 14.{" "}
+          <button className="textbtn" onClick={() => setSettings({ tongueCalib: null })} data-testid="calib-clear">Clear</button>
+        </p>
+      )}
+      <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <button className="btn sm ghost" onClick={() => { setChecking((c) => !c); if (!checking) setCalibrating(false); }} disabled={!canCamera} data-testid="camcheck-toggle">{checking ? "Stop the camera check" : "Check my camera"}</button>
+        {s.tongue && (
+          <button className="btn sm" onClick={() => { setCalibrating((c) => !c); if (!calibrating) setChecking(false); }} disabled={!canCamera} data-testid="calib-toggle">
+            {calibrating ? "Stop calibration" : s.tongueCalib ? "Recalibrate tongue" : "Calibrate tongue"}
+          </button>
+        )}
       </div>
+      {checking && <CameraCheck settings={s} />}
+      {calibrating && <TongueCalibrate settings={s} onDone={() => setCalibrating(false)} />}
       <p className="tiny" style={{ margin: "14px 0 0" }}>
         Your browser will ask for camera access the first time. The picture is analysed on this device and then discarded: nothing is recorded, saved or sent to axol.
         The camera is only on while Reels is showing, and you can pause it from the pill at the top of the player.
