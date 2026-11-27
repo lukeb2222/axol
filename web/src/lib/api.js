@@ -33,6 +33,8 @@ export const api = {
   discover: (q) => call("POST", "/search/discover", { q }),
   steer: (b) => call("POST", "/feed/steer", b),
   suggest: () => call("GET", "/search/suggest"),
+  library: () => call("GET", "/library"),
+
   feedback: (text) => call("POST", "/feedback", { text }),
   referrals: () => call("GET", "/referrals"),
   submitAd: (url) => call("POST", "/referrals/ad", { url }),

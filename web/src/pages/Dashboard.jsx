@@ -1,8 +1,32 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../lib/api.js";
 import Poster from "../components/Poster.jsx";
+import ReelScroller from "../components/ReelScroller.jsx";
 import { Flame } from "../components/Icons.jsx";
 import Credit from "../components/Credit.jsx";
+
+const SRC = { youtube: "Shorts", tiktok: "TikTok", instagram: "Reels" };
+
+function ClipShelf({ title, hint, items, onOpen, testid }) {
+  if (!items?.length) return null;
+  return (
+    <div data-testid={testid}>
+      <div className="cardhead"><h2>{title}</h2><span className="tiny">{hint}</span></div>
+      <div className="grid small">
+        {items.map((v, i) => (
+          <button key={v.impressionId || v.id} className="tile" onClick={() => onOpen(i)} type="button">
+            <div className="tilebg" />
+            <Poster item={v} className="tileimg" />
+            <div className="tileshade" />
+            <span className={`srcpill ${v.source}`}>{SRC[v.source] || v.source}</span>
+            <span className="tiletitle">{v.title || v.creator}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 
 const NAMES = { youtube: "YouTube Shorts", tiktok: "TikTok", instagram: "Instagram Reels" };
 const pretty = (t) => t.replace(/-/g, " ");
@@ -102,10 +126,17 @@ function Attention({ landing, skipping }) {
   );
 }
 
-export default function Dashboard({ user, onGoReels }) {
+export default function Dashboard({ user, onGoReels, onPlayerOpen }) {
   const [d, setD] = useState(null);
+  const [lib, setLib] = useState({ liked: [], history: [] });
+  const [player, setPlayer] = useState(null); // { list: "liked" | "history", start }
   const [err, setErr] = useState("");
-  useEffect(() => { api.dashboard().then(setD).catch((e) => setErr(e.message)); }, []);
+  useEffect(() => {
+    api.dashboard().then(setD).catch((e) => setErr(e.message));
+    api.library().then(setLib).catch(() => {});
+  }, []);
+  useEffect(() => { onPlayerOpen?.(!!player); return () => onPlayerOpen?.(false); }, [player, onPlayerOpen]);
+  const playing = player ? lib[player.list] : null;
 
   if (err) return <div className="page"><div className="shell"><div className="error">{err}</div></div></div>;
   if (!d) return <div className="page"><div className="shell"><div className="skeleton tall"><div className="shimmer" /></div></div></div>;
@@ -173,26 +204,22 @@ export default function Dashboard({ user, onGoReels }) {
               )}
             </div>
 
-            {d.liked.length > 0 && (
-              <div>
-                <div className="cardhead"><h2>Clips you liked</h2><span className="tiny">opens on its platform</span></div>
-                <div className="grid small">
-                  {d.liked.map((v) => (
-                    <a key={v.id} className="tile" href={v.url} target="_blank" rel="noreferrer">
-                      <div className="tilebg" />
-                      <Poster item={v} className="tileimg" />
-                      <div className="tileshade" />
-                      <span className={`srcpill ${v.source}`}>{v.source === "youtube" ? "Shorts" : v.source === "tiktok" ? "TikTok" : "Reels"}</span>
-                      <span className="tiletitle">{v.title || v.creator}</span>
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
+            <ClipShelf title="Clips you liked" hint="watch them again here" items={lib.liked} testid="shelf-liked" onOpen={(start) => setPlayer({ list: "liked", start })} />
+            <ClipShelf title="Recently watched" hint="pick up a clip you already saw" items={lib.history} testid="shelf-history" onOpen={(start) => setPlayer({ list: "history", start })} />
+          </>
+        )}
+        {(fresh && (lib.liked.length > 0 || lib.history.length > 0)) && (
+          <>
+            <ClipShelf title="Clips you liked" hint="watch them again here" items={lib.liked} testid="shelf-liked" onOpen={(start) => setPlayer({ list: "liked", start })} />
+            <ClipShelf title="Recently watched" hint="pick up a clip you already saw" items={lib.history} testid="shelf-history" onOpen={(start) => setPlayer({ list: "history", start })} />
           </>
         )}
         <Credit />
       </div>
+      {player && playing && (
+        <ReelScroller overlay items={playing} startIndex={player.start}
+          onClose={() => setPlayer(null)} title={player.list === "liked" ? "Liked" : "Watched earlier"} />
+      )}
     </div>
   );
 }

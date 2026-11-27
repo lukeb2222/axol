@@ -6,17 +6,18 @@ import NativePlayer from "./NativePlayer.jsx";
 import Poster from "./Poster.jsx";
 import { posterCandidates } from "../lib/posters.js";
 import { beacon } from "../lib/api.js";
+import { setPlayerCommands } from "../lib/playerCommands.js";
 import { Heart, EyeOff, Share, Info, Play, Volume } from "./Icons.jsx";
 
 const ASSUMED_EMBED_MS = 20000; // typical short clip when the platform hides duration
 const PROGRESS_EVERY_MS = 2000;
 const LABEL = { youtube: "Shorts", tiktok: "TikTok", instagram: "Reels" };
 
-export default function VideoCard({ item, active, near, prewarm, warm, soundOn, needsGesture, paused, next, onFinished, onHide, onWantSound, onSoundBlocked, onBroken, onAlive, onSteer, showHint, held, nudge, onPromoDone }) {
+export default function VideoCard({ item, active, near, prewarm, warm, soundOn, needsGesture, paused, next, onFinished, onHide, onWantSound, onSoundBlocked, onBroken, onAlive, onSteer, onShared, showHint, held, nudge, onPromoDone }) {
   // axol's own player whenever the server holds the file; the platform's embed otherwise.
   const [nativeFailed, setNativeFailed] = useState(false);
   const kind = item.videoUrl && !nativeFailed ? "native" : item.embedKind;
-  const [liked, setLiked] = useState(false);
+  const [liked, setLiked] = useState(!!item.liked);
   const [bursts, setBursts] = useState([]);
   const [userPaused, setUserPaused] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -153,12 +154,30 @@ export default function VideoCard({ item, active, near, prewarm, warm, soundOn, 
   }, [item.impressionId]);
 
   const share = async () => {
+    let copied = false, shared = false;
     try {
-      if (navigator.share) await navigator.share({ url: item.url, title: item.title });
-      else await navigator.clipboard.writeText(item.url);
+      // On a phone, use the system share sheet; on a computer, copy the link so it is obvious it worked.
+      if (navigator.share && matchMedia("(pointer: coarse)").matches) {
+        await navigator.share({ url: item.url, title: item.title });
+        shared = true;
+      } else {
+        await navigator.clipboard.writeText(item.url);
+        copied = true;
+      }
     } catch {}
     beacon({ impressionId: item.impressionId, type: "share" });
+    onShared?.({ copied, shared });
+    return { copied, shared };
   };
+
+  useEffect(() => {
+    if (!active) return;
+    return setPlayerCommands({
+      like: () => like(!liked),
+      share,
+      pause: () => { if (controllable) setUserPaused((p) => !p); },
+    });
+  }, [active, liked, like, share, controllable]);
 
   const hide = () => {
     acc.current.finalized = true;

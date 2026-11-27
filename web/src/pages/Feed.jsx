@@ -1,17 +1,21 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../lib/api.js";
 import ReelScroller from "../components/ReelScroller.jsx";
+import { saveFeedSession, loadFeedSession } from "../lib/feedSession.js";
 
 /** The personal feed: an endless ranked stream, fetched a batch ahead of the viewer. */
-export default function Feed({ paused }) {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+export default function Feed({ paused, userId }) {
+  const restored = useRef(userId ? loadFeedSession(userId) : null);
+  const [items, setItems] = useState(() => restored.current?.items || []);
+  const [startIndex] = useState(() => restored.current?.index || 0);
+  const [active, setActive] = useState(startIndex);
+  const [loading, setLoading] = useState(!restored.current);
   const [empty, setEmpty] = useState(false);
   const [discoveryReady, setDiscoveryReady] = useState(true);
   const [links, setLinks] = useState("");
   const [importing, setImporting] = useState(false);
   const fetching = useRef(false);
-  const opened = useRef(false); // the first request of a session asks for the opening clip
+  const opened = useRef(!!restored.current); // the first request of a session asks for the opening clip
 
   const fetchMore = useCallback(async () => {
     if (fetching.current) return;
@@ -35,7 +39,9 @@ export default function Feed({ paused }) {
     }
   }, []);
 
-  useEffect(() => { fetchMore(); }, [fetchMore]);
+  useEffect(() => { if (!items.length) fetchMore(); else if (items.length < 6) fetchMore(); }, [fetchMore]);
+  useEffect(() => { if (userId && items.length) saveFeedSession(userId, { items, index: active }); }, [userId, items, active]);
+
   // While discovery is still filling an empty catalog, keep checking quietly.
   useEffect(() => {
     if (!empty || !discoveryReady) return;
@@ -92,5 +98,5 @@ export default function Feed({ paused }) {
     </div>
   );
 
-  return <ReelScroller items={items} onNeedMore={fetchMore} onRemove={onRemove} onSteer={onSteer} paused={paused} tail={tail} />;
+  return <ReelScroller items={items} onNeedMore={fetchMore} onRemove={onRemove} onSteer={onSteer} paused={paused} tail={tail} startIndex={startIndex} onActiveChange={setActive} />;
 }
