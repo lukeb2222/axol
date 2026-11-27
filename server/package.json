@@ -5,9 +5,9 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "dev": "node --watch --no-warnings=ExperimentalWarning src/index.js",
-    "start": "NODE_ENV=production node --no-warnings=ExperimentalWarning src/index.js",
-    "test": "node --test --no-warnings=ExperimentalWarning test/*.test.js"
+    "dev": "node --experimental-sqlite --watch --no-warnings=ExperimentalWarning src/index.js",
+    "start": "NODE_ENV=production node --experimental-sqlite --no-warnings=ExperimentalWarning src/index.js",
+    "test": "node --experimental-sqlite --test --no-warnings=ExperimentalWarning test/*.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "latest",
