@@ -27,6 +27,7 @@ export const api = {
   interest: (b) => call("POST", "/profile/interest", b),
   importLinks: (b) => call("POST", "/import", b),
   dashboard: () => call("GET", `/dashboard?tz=${-new Date().getTimezoneOffset()}`),
+  laughs: () => call("GET", `/laughs?tz=${-new Date().getTimezoneOffset()}`),
   // Catalog results for a query. `ids` in the response is the whole ordered list; page through it with searchItems.
   search: (q, { scope = "strong", n = 18, refresh = false } = {}) => call("GET", `/search?q=${encodeURIComponent(q)}&scope=${scope}&n=${n}${refresh ? "&refresh=1" : ""}`),
   searchItems: (q, ids) => call("POST", "/search/items", { q, ids }),

@@ -40,7 +40,7 @@ test("player commands are the ones the active clip registered, and clear when it
   const stop = setPlayerCommands(first);
   assert.equal(playerCommands(), first);
   stop();
-  assert.equal(playerCommands(), null);
+  assert.deepEqual(playerCommands(), {}); // empty, never null, so gesture code can call playerCommands().like?.()
   const second = { pause() {} };
   const stop2 = setPlayerCommands(second);
   setPlayerCommands({ like() {} });

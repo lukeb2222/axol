@@ -21,22 +21,36 @@ const STATUS = {
  * why a gesture is not being picked up (wrong camera, too dark, tongue reading too low…).
  * The picture stays on this device, as everywhere else.
  */
+function enabledForCheck(s) {
+  // If nothing is on yet, the check lets someone try every gesture before turning one on.
+  const any = s.nod || s.tongue || s.winkLike || s.tiltBack || s.browPause || s.laughSave;
+  const all = !any;
+  return {
+    nod: s.nod || all,
+    tongue: s.tongue || all,
+    winkLike: s.winkLike || all,
+    tiltBack: s.tiltBack || all,
+    browPause: s.browPause || all,
+    laughSave: s.laughSave || all,
+  };
+}
+
 function CameraCheck({ settings }) {
   const canvasRef = useRef(null);
   const [status, setStatus] = useState("starting");
-  const [seen, setSeen] = useState({ nod: 0, tongue: 0, last: "" });
+  const [seen, setSeen] = useState({ nod: 0, tongue: 0, wink: 0, tilt: 0, brow: 0, laugh: 0, last: "" });
   const [read, setRead] = useState(null);
   const [cameras, setCameras] = useState([]);
   const { sensitivity, cameraId, tongueCalib, tongueHold } = settings;
-  const nod = settings.nod || !settings.tongue, tongue = settings.tongue || !settings.nod;
+  const on = enabledForCheck(settings);
 
   useEffect(() => {
     let lastShown = 0;
     setStatus("starting"); setRead(null);
     return watchGestures({
-      nod, tongue, sensitivity, cameraId, tongueCalib, tongueHold,
+      ...on, sensitivity, cameraId, tongueCalib, tongueHold,
       onStatus: (s) => { setStatus(s); if (s === "on") listCameras().then(setCameras); },
-      onGesture: (kind) => setSeen((v) => ({ ...v, [kind]: v[kind] + 1, last: kind })),
+      onGesture: (kind) => setSeen((v) => ({ ...v, [kind]: (v[kind] || 0) + 1, last: kind })),
       onFrame: (frame) => {
         const c = canvasRef.current;
         if (!c) return;
@@ -47,10 +61,28 @@ function CameraCheck({ settings }) {
         if (r.t - lastShown < 200) return;
         lastShown = r.t;
         const need = detector?.need?.() ?? tongueNeed({ ...level.tongue, calib: tongueCalib });
-        setRead(r.face ? { pitch: Math.round(r.pitch), jaw: r.jaw, run: r.run, need } : null);
+        setRead(r.face ? {
+          pitch: Math.round(r.pitch), roll: Math.round(r.roll || 0),
+          jaw: r.jaw, run: r.run, need,
+          blinkL: r.blinkL, blinkR: r.blinkR, brow: r.brow, smile: r.smile,
+        } : null);
       },
     });
-  }, [nod, tongue, sensitivity, cameraId, tongueCalib, tongueHold]);
+  }, [on.nod, on.tongue, on.winkLike, on.tiltBack, on.browPause, on.laughSave, sensitivity, cameraId, tongueCalib, tongueHold]);
+
+  const chip = (kind, label) => (
+    <span data-testid={`seen-${kind}`} key={`${kind}${seen[kind]}`} className={seen.last === kind && seen[kind] ? "flash" : ""}>
+      {label} <strong>{seen[kind] || 0}</strong>
+    </span>
+  );
+  const meter = (label, value, max, hot) => (
+    <div className="tiny">
+      {label} <strong style={{ color: "var(--fg)" }}>{value}</strong>
+      <div className="track" style={{ height: 6, borderRadius: 999, background: "#1c1c22", overflow: "hidden", marginTop: 4 }}>
+        <div style={{ height: "100%", width: `${Math.max(0, Math.min(100, (value / max) * 100))}%`, background: hot ? "var(--accent)" : "var(--fg-3)" }} />
+      </div>
+    </div>
+  );
 
   return (
     <div className="camcheck" data-testid="camcheck" data-status={status}>
@@ -59,14 +91,34 @@ function CameraCheck({ settings }) {
         <div className={status === "on" ? "camok" : "camwarn"} role="status" data-testid="camstatus">{STATUS[status] || status}</div>
         {status === "on" && (
           <div className="minis">
-            {nod && <span data-testid="seen-nod" key={`n${seen.nod}`} className={seen.last === "nod" && seen.nod ? "flash" : ""}>Nods seen <strong>{seen.nod}</strong></span>}
-            {tongue && <span data-testid="seen-tongue" key={`t${seen.tongue}`} className={seen.last === "tongue" && seen.tongue ? "flash" : ""}>Tongue seen <strong>{seen.tongue}</strong></span>}
+            {on.nod && chip("nod", "Nods seen")}
+            {on.tongue && chip("tongue", "Tongue seen")}
+            {on.winkLike && chip("wink", "Winks seen")}
+            {on.tiltBack && chip("tilt", "Tilts seen")}
+            {on.browPause && chip("brow", "Brow raises")}
+            {on.laughSave && chip("laugh", "Laughs seen")}
           </div>
         )}
-        {status === "on" && read && tongue && (
+        {status === "on" && read && on.tongue && (
           <div className="tiny" data-testid="tongue-read">
             Mouth {read.jaw >= 0.12 ? "open" : "closed"} · tongue reading <strong style={{ color: "var(--fg)" }}>{read.run ?? 0}</strong> of 14 (counts at {read.need}{tongueCalib ? ", from your calibration" : ""}, with the mouth open)
             <div className="track" style={{ height: 6, borderRadius: 999, background: "#1c1c22", overflow: "hidden", marginTop: 4 }}><div style={{ height: "100%", width: `${((read.run ?? 0) / 14) * 100}%`, background: (read.run ?? 0) >= read.need && read.jaw >= 0.12 ? "var(--accent)" : "var(--fg-3)" }} /></div>
+          </div>
+        )}
+        {status === "on" && read && (on.winkLike || on.browPause || on.laughSave || on.tiltBack) && (
+          <div data-testid="face-read" style={{ display: "grid", gap: 6 }}>
+            {on.winkLike && (
+              <div className="tiny" data-testid="wink-read">
+                Blink · left {Math.round((read.blinkL || 0) * 100)} · right {Math.round((read.blinkR || 0) * 100)}
+                <div className="track" style={{ height: 6, borderRadius: 999, background: "#1c1c22", overflow: "hidden", marginTop: 4, display: "flex" }}>
+                  <div style={{ height: "100%", width: `${(read.blinkL || 0) * 50}%`, background: (read.blinkL || 0) >= 0.55 && (read.blinkR || 0) <= 0.35 ? "var(--accent)" : "var(--fg-3)" }} />
+                  <div style={{ height: "100%", width: `${(read.blinkR || 0) * 50}%`, background: (read.blinkR || 0) >= 0.55 && (read.blinkL || 0) <= 0.35 ? "var(--accent)" : "var(--fg-3)" }} />
+                </div>
+              </div>
+            )}
+            {on.tiltBack && meter("Head tilt", Math.abs(read.roll || 0), 40, Math.abs(read.roll || 0) >= 14)}
+            {on.browPause && meter("Brows", Math.round((read.brow || 0) * 100), 100, (read.brow || 0) >= 0.28)}
+            {on.laughSave && meter("Smile", Math.round((read.smile || 0) * 100), 100, (read.smile || 0) >= 0.45)}
           </div>
         )}
         {cameras.length > 1 && (
@@ -171,7 +223,7 @@ function Switch({ on, onChange, label, hint, testid }) {
   );
 }
 
-/** Settings for scrolling without touching the screen. Off unless the person turns it on. */
+/** Settings for scrolling and controlling clips without touching the screen. Off unless the person turns it on. */
 export default function HandsFree() {
   const [s, setS] = useState(getSettings);
   const [checking, setChecking] = useState(false);
@@ -180,17 +232,29 @@ export default function HandsFree() {
   const canCamera = !!navigator.mediaDevices?.getUserMedia;
   // Turning a gesture on also un-pauses hands-free, so the switch always does what it says.
   const set = (patch) => setSettings({ ...patch, handsFreePaused: false });
-  const any = s.nod || s.tongue;
+  const any = s.nod || s.tongue || s.winkLike || s.tiltBack || s.browPause || s.laughSave;
 
   return (
     <div className="card" data-testid="handsfree">
-      <div className="tiny" style={{ marginBottom: 6 }}>HANDS-FREE SCROLLING</div>
-      <h2>Scroll without touching</h2>
-      <p className="muted" style={{ margin: "6px 0 14px" }}>Go to the next clip with a gesture. axol watches through your {matchMedia("(pointer: coarse)").matches ? "phone's front camera" : "computer's camera"} while you are on Reels.</p>
+      <div className="tiny" style={{ marginBottom: 6 }}>HANDS-FREE</div>
+      <h2>Scroll and react with your face</h2>
+      <p className="muted" style={{ margin: "6px 0 14px" }}>Go to the next clip, like one, go back, pause, or save a laugh — without touching the screen. axol watches through your {matchMedia("(pointer: coarse)").matches ? "phone's front camera" : "computer's camera"} while you are on Reels. Everything stays on this device.</p>
       {!canCamera && <div className="error" style={{ marginBottom: 10 }}>This browser doesn't give axol a camera, so these can't be used here.</div>}
+      <div className="tiny" style={{ marginBottom: 6 }}>SCROLL</div>
       <div className="switches">
         <Switch on={s.nod} onChange={(v) => set({ nod: v })} label="Nod to scroll" hint="Nod your head down and back up." testid="switch-nod" />
         <Switch on={s.tongue} onChange={(v) => set({ tongue: v })} label="Tongue to scroll" hint="Stick your tongue out for a moment. Works best after a quick calibration, in good light." testid="switch-tongue" />
+      </div>
+      <div className="tiny" style={{ margin: "16px 0 6px" }}>FACE GESTURES</div>
+      <div className="switches">
+        <Switch on={s.winkLike} onChange={(v) => set({ winkLike: v })} label="Wink to like" hint="Close one eye and keep the other open. A normal blink does not count." testid="switch-wink" />
+        <Switch on={s.tiltBack} onChange={(v) => set({ tiltBack: v })} label="Tilt to go back" hint="Tip your head to one side and back up to return to the last clip." testid="switch-tilt" />
+        <Switch on={s.browPause} onChange={(v) => set({ browPause: v })} label="Raise your brows to pause" hint="Lift your eyebrows and hold them to pause or play." testid="switch-brow" />
+        <Switch on={s.laughSave} onChange={(v) => set({ laughSave: v })} label="Save clips that make you laugh" hint="A real laugh is saved to Made me laugh on your dashboard, with a recap you can share. Only the clip is remembered, not your face." testid="switch-laugh" />
+      </div>
+      <div className="tiny" style={{ margin: "16px 0 6px" }}>ON REELS</div>
+      <div className="switches">
+        <Switch on={s.gestureHud} onChange={(v) => set({ gestureHud: v })} label="Show a live gesture HUD" hint="A small picture of what the camera sees, and which gesture just fired. The picture never leaves this device." testid="switch-hud" />
       </div>
       {any && (
         <div style={{ marginTop: 14 }}>
@@ -225,7 +289,7 @@ export default function HandsFree() {
       {checking && <CameraCheck settings={s} />}
       {calibrating && <TongueCalibrate settings={s} onDone={() => setCalibrating(false)} />}
       <p className="tiny" style={{ margin: "14px 0 0" }}>
-        Your browser will ask for camera access the first time. The picture is analysed on this device and then discarded: nothing is recorded, saved or sent to axol.
+        Your browser will ask for camera access the first time. The picture is analysed on this device and then discarded: nothing is recorded, saved or sent to axol, except the clip you laughed at or liked.
         The camera is only on while Reels is showing, and you can pause it from the pill at the top of the player.
       </p>
     </div>

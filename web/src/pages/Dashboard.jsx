@@ -4,6 +4,7 @@ import Poster from "../components/Poster.jsx";
 import ReelScroller from "../components/ReelScroller.jsx";
 import { Flame } from "../components/Icons.jsx";
 import Credit from "../components/Credit.jsx";
+import LaughCard from "../components/LaughCard.jsx";
 
 const SRC = { youtube: "Shorts", tiktok: "TikTok", instagram: "Reels" };
 
@@ -152,6 +153,8 @@ export default function Dashboard({ user, onGoReels, onPlayerOpen }) {
           <h1>{first ? `${first}'s dashboard` : "Your dashboard"}</h1>
           <p className="muted" style={{ margin: "6px 0 0" }}>What you watch, what holds you, and how your feed is changing because of it.</p>
         </div>
+
+        {d.laughs?.total > 0 && <LaughCard stats={d.laughs} name={user.name} first={first} />}
 
         {fresh ? (
           <div className="card" style={{ display: "grid", gap: 12, justifyItems: "start" }}>
