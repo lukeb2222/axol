@@ -65,12 +65,12 @@ Full details in [`docs/ALGORITHM.md`](docs/ALGORITHM.md).
 
 ## The app
 
-Four tabs: **Reels** (the personal feed), **Search** (any topic, across the shared catalog plus live
+Four tabs: **Reels** (the personal feed; a refresh picks up where you left off), **Search** (any topic, across the shared catalog plus live
 discovery on all three platforms), **Dashboard** (watch time, what holds your attention, platform
-split, liked clips), and **You** (the taste profile and its controls).
+split, and liked or recently watched clips you can play again in axol), and **You** (the taste profile and its controls).
 
 The reel player uses native snap scrolling on touch and an eased one-clip glide for wheel and
-keyboard. The next clip is buffered before you reach it, a poster covers each player until its first
+keyboard (J/K or arrows to move, Space to pause, L to like, C to copy the link, M for sound, ? for the list). The next clip is buffered before you reach it, a poster covers each player until its first
 frame, and every platform renders into the same full-bleed 9:16 frame: YouTube through the IFrame
 API, TikTok through its controllable embed player (`tiktok.com/player/v1`), and Instagram through its
 post embed, oversized and offset so the video inside the card fills the frame.
@@ -90,6 +90,7 @@ POST /api/search/items          { q, ids }   # next page of that same list, by i
 POST /api/search/discover       { q }        # optional: fresh search on platforms that have budget
 POST /api/feed/steer            { impressionId, tag, direction: more|less, queue: [impressionId…] }
 GET  /api/search/suggest        GET /api/dashboard?tz=<minutes east of UTC>
+GET  /api/library               -> { liked[], history[] }  # playable items, same shape as the feed
 ```
 
 ## Tests

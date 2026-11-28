@@ -284,6 +284,7 @@ textarea { min-height: 140px; resize: vertical; line-height: 1.5; }
 @media (min-width: 560px) { .grid { grid-template-columns: repeat(3, 1fr); } .grid.small { grid-template-columns: repeat(4, 1fr); } }
 @media (min-width: 900px) { .grid { grid-template-columns: repeat(4, 1fr); } .grid.small { grid-template-columns: repeat(6, 1fr); } }
 .tile { position: relative; display: block; aspect-ratio: 9 / 16; border-radius: 14px; overflow: hidden; background: #15151a; text-align: left; transition: transform 0.25s var(--ease-out); }
+button.tile { width: 100%; border: 0; color: inherit; padding: 0; cursor: pointer; font: inherit; }
 .tile:hover { transform: scale(1.02); }
 .tile:active { transform: scale(0.97); }
 .tilebg { position: absolute; inset: 0; background: linear-gradient(160deg, #2a1f4d, #15151a 60%, #1d2a12); }
@@ -436,3 +437,9 @@ select { background: #16161a; color: var(--fg); border: 1px solid var(--line); b
 
 .textbtn { display: inline; padding: 0; margin: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .textbtn:hover { color: var(--fg); }
+
+.keyhelp { position: fixed; inset: 0; z-index: 80; background: rgba(0,0,0,0.55); display: grid; place-items: center; padding: 24px; }
+.keyhelp-card { width: min(420px, 100%); background: var(--bg, #141418); border: 1px solid var(--line); border-radius: 18px; padding: 18px 18px 16px; }
+.keylist { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 8px; }
+.keylist li { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; font-size: 14px; }
+.keylist kbd { font: 600 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 4px 8px; border-radius: 8px; background: #1c1c22; border: 1px solid var(--line); color: var(--fg); white-space: nowrap; }

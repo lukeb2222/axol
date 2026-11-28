@@ -18,6 +18,7 @@ import { youtubeUnitsUsed } from "../sources/youtube.js";
 import { discoveryState } from "../ingest.js";
 import { insightsRouter } from "./insights.js";
 import { publicVideo } from "../videoView.js";
+import { getLibrary, setLiked } from "../library.js";
 import { serveMedia, mediaStats } from "../media.js";
 import { apifyEnabled, apifyRunsToday } from "../sources/apify.js";
 
@@ -113,7 +114,7 @@ apiRouter.post("/events", async (req, res) => {
       return res.json({ ok: true });
     case "like":
     case "unlike":
-      q.run("UPDATE impressions SET liked = ?, updated_at = ? WHERE id = ?", type === "like" ? 1 : 0, now(), imp.id);
+      setLiked(userId, imp.video_id, type === "like");
       return res.json({ ok: true });
     case "share":
       q.run("UPDATE impressions SET shared = 1, updated_at = ? WHERE id = ?", now(), imp.id);
@@ -157,6 +158,8 @@ apiRouter.post("/events", async (req, res) => {
   }
   res.json({ ok: true, learned: { score: round(learned.score), deltas: learned.deltas.slice(0, 4).map((d) => ({ ...d, delta: round(d.delta), weight: round(d.weight) })) }, synth });
 });
+
+apiRouter.get("/library", (req, res) => res.json(getLibrary(req.user.id)));
 
 apiRouter.use(insightsRouter);
 

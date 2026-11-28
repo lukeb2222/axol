@@ -5,6 +5,8 @@ import VideoCard from "./VideoCard.jsx";
 import Toasts from "./Toasts.jsx";
 import { useHandsFree } from "../lib/useHandsFree.js";
 import { rememberUndo, undoTarget } from "../lib/handsFreeUndo.js";
+import { playerCommands, SHORTCUTS } from "../lib/playerCommands.js";
+
 import { Volume, Back } from "./Icons.jsx";
 
 const PREFETCH_AT = 3;
@@ -17,8 +19,11 @@ const easeOutQuart = (t) => 1 - Math.pow(1 - t, 4);
  * The clip under the viewport's midpoint is active; its neighbours are mounted and the next one is
  * buffered ahead of time, so a swipe lands on moving video rather than a spinner.
  */
-export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, paused, startIndex = 0, overlay, onClose, title, tail, right }) {
+export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, paused, startIndex = 0, overlay, onClose, title, tail, right, onActiveChange }) {
   const [active, setActive] = useState(startIndex);
+  const [help, setHelp] = useState(false);
+  useEffect(() => { onActiveChange?.(active); }, [active, onActiveChange]);
+
   const [soundOn, setSoundOn] = useState(sound.on);
   // Browsers refuse to start video with sound until the viewer has interacted with the page.
   // Until then clips play muted; the first tap, click or key press anywhere turns sound on.
@@ -154,18 +159,28 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
 
   const toggleSound = useCallback(() => { sound.on = !sound.on; setSoundOn(sound.on); }, []);
   const wantSound = useCallback(() => { sound.on = true; setSoundOn(true); }, []);
+  const onShared = useCallback(({ copied } = {}) => {
+    if (copied) setToasts((t) => [...t, { id: Date.now(), text: "Link copied" }].slice(-3));
+  }, []);
+
 
   useEffect(() => {
     const onKey = (e) => {
       if (live.current.paused || e.target.closest?.("textarea,input")) return;
-      if (["ArrowDown", "PageDown", " ", "j"].includes(e.key)) { e.preventDefault(); goTo(live.current.active + 1); }
-      else if (["ArrowUp", "PageUp", "k"].includes(e.key)) { e.preventDefault(); goTo(live.current.active - 1); }
-      else if (e.key.toLowerCase() === "m") toggleSound();
-      else if (e.key === "Escape" && onClose) onClose();
+      const k = e.key;
+      if (k === "?" || (k === "/" && e.shiftKey)) { e.preventDefault(); setHelp((h) => !h); return; }
+      if (k === "Escape") { e.preventDefault(); if (help) { setHelp(false); return; } onClose?.(); return; }
+      if (help) return;
+      if (k === " ") { e.preventDefault(); playerCommands()?.pause?.(); return; }
+      if (["ArrowDown", "PageDown", "j"].includes(k)) { e.preventDefault(); goTo(live.current.active + 1); }
+      else if (["ArrowUp", "PageUp", "k"].includes(k)) { e.preventDefault(); goTo(live.current.active - 1); }
+      else if (k.toLowerCase() === "m") toggleSound();
+      else if (k.toLowerCase() === "l") { e.preventDefault(); playerCommands()?.like?.(); }
+      else if (k.toLowerCase() === "c") { e.preventDefault(); playerCommands()?.share?.(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [goTo, toggleSound, onClose]);
+  }, [goTo, toggleSound, onClose, help]);
 
   // Keep the feed ahead of the viewer: more clips, and the next posters already decoded.
   useEffect(() => {
@@ -250,7 +265,7 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
             <VideoCard item={item} active={idx === active && !paused} near={Math.abs(idx - active) === 1} prewarm={idx === active + 1 && !paused} warm={idx === active + 2 && !paused}
               soundOn={soundOn} needsGesture={needsGesture} paused={paused} next={items[idx + 1]}
               onFinished={onFinished} onHide={onRemove} onWantSound={wantSound} onSoundBlocked={onSoundBlocked} onBroken={onBroken} onAlive={onAlive} onSteer={onSteer ? steer : undefined} showHint={hint && idx === 0 && !locked}
-              held={locked && idx === active} nudge={nudge} onPromoDone={release} />
+              held={locked && idx === active} nudge={nudge} onPromoDone={release} onShared={onShared} />
           </div>
         ))}
         {/* The loading card is deliberately not a snap point: browsers keep following whichever
@@ -279,9 +294,25 @@ export default function ReelScroller({ items, onNeedMore, onRemove, onSteer, pau
           {title && <span className="pill">{title}</span>}
           {tuned > 0 && <span className="pill hot" key={tuned}>✦ tuned ×{tuned}</span>}
           {right}
+          {!matchMedia("(pointer: coarse)").matches && (
+            <button className="pill" onClick={() => setHelp(true)} data-testid="keys-help" title="Keyboard shortcuts">Keys</button>
+          )}
         </div>
       </div>
+      {help && (
+        <div className="keyhelp" role="dialog" aria-label="Keyboard shortcuts" data-testid="keyhelp" onClick={() => setHelp(false)}>
+          <div className="keyhelp-card" onClick={(e) => e.stopPropagation()}>
+            <div className="tiny" style={{ marginBottom: 8 }}>KEYBOARD</div>
+            <h2 style={{ margin: "0 0 12px" }}>Shortcuts</h2>
+            <ul className="keylist">
+              {SHORTCUTS.map((s) => <li key={s.keys}><kbd>{s.keys}</kbd><span>{s.action}</span></li>)}
+            </ul>
+            <button className="btn sm ghost" onClick={() => setHelp(false)}>Close</button>
+          </div>
+        </div>
+      )}
       <Toasts items={toasts} />
+
     </div>
   );
 }

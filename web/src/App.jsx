@@ -8,6 +8,8 @@ import Dashboard from "./pages/Dashboard.jsx";
 import Profile from "./pages/Profile.jsx";
 import Admin from "./pages/Admin.jsx";
 import { Reels, Search as SearchIcon, Chart, User, Shield } from "./components/Icons.jsx";
+import { clearFeedSession } from "./lib/feedSession.js";
+
 
 const TABS = [
   { id: "reels", label: "Reels", Icon: Reels },
@@ -21,6 +23,7 @@ export default function App() {
   // The owner's view opens from its tab once an account has owner access, or from /#owner to enter the key.
   const [tab, setTab] = useState(() => (location.hash === "#owner" ? "owner" : "reels"));
   const [searchPlaying, setSearchPlaying] = useState(false);
+  const [libraryPlaying, setLibraryPlaying] = useState(false);
   // Each visit to a data tab remounts it, so the numbers are always current.
   const [visit, setVisit] = useState(0);
 
@@ -32,7 +35,7 @@ export default function App() {
 
   const onAuth = (d) => { setToken(d.token); setState({ loading: false, user: d.user, profile: d.profile }); };
   const onProfile = (profile) => setState((s) => ({ ...s, profile }));
-  const logout = async () => { await api.logout().catch(() => {}); setToken(null); setTab("reels"); setState({ loading: false, user: null, profile: null }); };
+  const logout = async () => { if (state.user?.id) clearFeedSession(state.user.id); await api.logout().catch(() => {}); setToken(null); setTab("reels"); setState({ loading: false, user: null, profile: null }); };
   const go = useCallback((id) => { setTab(id); setVisit((v) => v + 1); }, []);
   useEffect(() => {
     const onHash = () => { if (location.hash === "#owner") go("owner"); };
@@ -50,14 +53,14 @@ export default function App() {
   return (
     <div className="app">
       {/* The feed stays mounted behind the other tabs so it resumes exactly where it was. */}
-      <Feed paused={tab !== "reels"} />
+      <Feed paused={tab !== "reels"} userId={state.user.id} />
       {/* Search keeps its results while you look at other tabs. */}
       <div hidden={tab !== "search"}><Search onPlayerOpen={setSearchPlaying} /></div>
-      {tab === "dash" && <Dashboard key={visit} user={state.user} onGoReels={() => go("reels")} />}
+      {tab === "dash" && <Dashboard key={visit} user={state.user} onGoReels={() => go("reels")} onPlayerOpen={setLibraryPlaying} />}
       {tab === "you" && <Profile key={visit} user={state.user} onLogout={logout} />}
       {tab === "owner" && <Admin key={visit} user={state.user} onOwner={onOwner} />}
 
-      {!searchPlaying && (
+      {!searchPlaying && !libraryPlaying && (
         <nav className={`tabbar ${tab === "reels" ? "over-video" : ""}`} aria-label="Main" style={{ "--tabs": tabs.length }}>
           <div className="tabbrand"><span className="dot" />axol</div>
           {tabs.map(({ id, label, Icon }) => (
