@@ -148,8 +148,13 @@ export default function VideoCard({ item, active, near, prewarm, warm, soundOn, 
     onBroken?.(item.impressionId, definitive === true);
   }, [item.impressionId, onBroken]);
 
-  const like = useCallback((on = true) => {
+  const like = useCallback((on = true, { burst = false } = {}) => {
     setLiked(on);
+    if (on && burst) {
+      const id = Date.now();
+      setBursts((b) => [...b, { id, x: "50%", y: "42%" }]);
+      setTimeout(() => setBursts((b) => b.filter((k) => k.id !== id)), 900);
+    }
     beacon({ impressionId: item.impressionId, type: on ? "like" : "unlike" });
   }, [item.impressionId]);
 
@@ -170,12 +175,19 @@ export default function VideoCard({ item, active, near, prewarm, warm, soundOn, 
     return { copied, shared };
   };
 
+  // The active card exposes its controls to the keyboard shortcuts and hands-free gestures.
   useEffect(() => {
     if (!active) return;
     return setPlayerCommands({
       like: () => like(!liked),
+      gestureLike: () => like(true, { burst: true }),
       share,
       pause: () => { if (controllable) setUserPaused((p) => !p); },
+      togglePause: () => {
+        let next = false;
+        setUserPaused((p) => { next = !p; return next; });
+        return next;
+      },
     });
   }, [active, liked, like, share, controllable]);
 

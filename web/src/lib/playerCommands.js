@@ -1,5 +1,5 @@
-// The clip on screen can register like / share / pause handlers so the reel player can drive them
-// from the keyboard without reaching into the card.
+// The clip on screen registers like / share / pause handlers so the reel player can drive them
+// from the keyboard or a hands-free gesture without reaching into the card.
 
 let current = null;
 
@@ -8,8 +8,9 @@ export function setPlayerCommands(handlers) {
   return () => { if (current === handlers) current = null; };
 }
 
+// Always an object, so callers can write playerCommands().like?.() safely.
 export function playerCommands() {
-  return current;
+  return current || {};
 }
 
 export const SHORTCUTS = [

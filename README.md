@@ -144,16 +144,32 @@ finishes setup, the member earns one ad: a YouTube Short of their choice. The ow
 in Owner → Ads; it then runs for 7 days as a labelled, skippable "Sponsored" clip (at most one
 per batch, once a day per viewer) with a button to the creator's channel.
 
-## Hands-free scrolling
+## Hands-free scrolling and face gestures
 
-Optional, off by default (You tab → Hands-free scrolling). With it on, the reel player moves to
-the next clip when the viewer **nods** (head down and back up) or **sticks their tongue out**.
-It uses the device's front camera: the webcam on a computer, the selfie camera on a phone.
+Optional, off by default (You tab → Hands-free). With it on, axol watches through the device's
+front camera (the webcam on a computer, the selfie camera on a phone) while Reels is showing.
+
+**Scroll.** Nod your head down and back up, or stick your tongue out, to go to the next clip.
+
+**Face gestures** (each one is its own switch):
+
+- **Wink to like.** Close one eye and keep the other open. A normal blink does not count.
+- **Tilt to go back.** Tip your head to one side and back up to return to the last clip.
+- **Raise your brows to pause.** Lift your eyebrows and hold them to pause or play.
+- **Save clips that make you laugh.** A sudden, held smile is saved to a Made me laugh shelf
+  on the dashboard, with a recap card you can share ("you laughed 14 times today").
+- **Live gesture HUD.** A small on-screen picture of what the camera sees, and which gesture
+  just fired — built for showing a friend. Optional.
 
 - The picture is analysed in the browser (MediaPipe Face Landmarker, served from axol's own files
-  under `web/public/mediapipe`) and discarded. Nothing is recorded or sent to the server.
+  under `web/public/mediapipe`) and discarded. Nothing from the camera is recorded or sent to the
+  server. A laugh or a wink-like only remembers the clip, never the face.
 - The camera runs only while Reels is showing; the pill at the top of the player pauses it.
-- Nod = head pitch from the tracker (`web/src/lib/gestures.js`). Tongue = jaw open plus a long
-  pink stretch below the upper lip, measured from the picture (`web/src/lib/tongue.js`); the
-  tracker has no tongue signal of its own, so this one is experimental.
-- `web/test/gestures.test.js` runs both detectors over readings taken from real clips.
+- Nod = head pitch from the tracker. Tilt = head roll, same idea as a nod but sideways. Tongue =
+  jaw open plus a long pink stretch below the upper lip (`web/src/lib/tongue.js`); the tracker
+  has no tongue signal of its own, so this one is experimental. Wink, brows and laugh use the
+  tracker's on-device blendshapes (`web/src/lib/gestures.js`).
+- New gestures use the same smoothing, hold time, hysteresis and cool-down as the tongue
+  detector, so they do not fire during ordinary watching, blinking or talking.
+- `web/test/gestures.test.js` runs the nod and tongue detectors over readings taken from real
+  clips. `web/test/faceGestures.test.js` covers wink, tilt, brows and laugh over hand-made traces.

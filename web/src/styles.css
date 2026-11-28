@@ -443,3 +443,62 @@ select { background: #16161a; color: var(--fg); border: 1px solid var(--line); b
 .keylist { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 8px; }
 .keylist li { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; font-size: 14px; }
 .keylist kbd { font: 600 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 4px 8px; border-radius: 8px; background: #1c1c22; border: 1px solid var(--line); color: var(--fg); white-space: nowrap; }
+
+/* ------------------------------ face gestures, HUD, laugh recap ------------------------------ */
+.g-flash {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  pointer-events: none; z-index: 18;
+}
+.g-flash-core { text-align: center; animation: gFlash 0.85s var(--ease-out) both; }
+.g-flash-mark {
+  font-size: 72px; font-weight: 900; letter-spacing: -0.06em; line-height: 0.9;
+  text-shadow: 0 8px 40px rgba(0,0,0,0.45);
+}
+.g-flash[data-kind="laugh"] .g-flash-mark { color: var(--accent); text-shadow: 0 0 44px rgba(200,255,61,0.55), 0 8px 40px rgba(0,0,0,0.4); }
+.g-flash[data-kind="wink"] .g-flash-mark { color: var(--heart); text-shadow: 0 0 36px rgba(255,59,107,0.55); }
+.g-flash[data-kind="tilt"] .g-flash-mark,
+.g-flash[data-kind="nod"] .g-flash-mark,
+.g-flash[data-kind="tongue"] .g-flash-mark { color: #fff; }
+.g-flash[data-kind="brow"] .g-flash-mark { color: #fff; font-size: 56px; letter-spacing: 0.06em; }
+.g-flash-label { margin-top: 10px; font-size: 22px; font-weight: 800; letter-spacing: -0.03em; color: #fff; }
+.g-flash-hint { margin-top: 4px; font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.72); }
+@keyframes gFlash {
+  0% { transform: scale(0.7) translateY(10px); opacity: 0; }
+  22% { transform: scale(1.06) translateY(0); opacity: 1; }
+  70% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.96); opacity: 0; }
+}
+
+.g-hud {
+  position: absolute; left: 14px; top: calc(58px + var(--sat));
+  z-index: 19; width: 108px; pointer-events: none;
+}
+.g-hud-cam {
+  width: 108px; aspect-ratio: 4 / 3; object-fit: cover; display: block;
+  border-radius: 16px; background: #000; transform: scaleX(-1);
+  border: 2px solid rgba(255,255,255,0.18);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.45);
+}
+.g-hud[data-fired]:not([data-fired=""]) .g-hud-cam { animation: hudRing 0.7s var(--ease-out); }
+@keyframes hudRing {
+  0% { box-shadow: 0 0 0 0 rgba(200,255,61,0.7), 0 8px 28px rgba(0,0,0,0.45); border-color: var(--accent); }
+  100% { box-shadow: 0 0 0 14px rgba(200,255,61,0), 0 8px 28px rgba(0,0,0,0.45); }
+}
+.g-hud-cap {
+  display: flex; align-items: center; gap: 6px; margin-top: 6px;
+  padding: 4px 8px; border-radius: 999px;
+  background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.12);
+  backdrop-filter: blur(10px);
+}
+.g-hud-dot { width: 7px; height: 7px; border-radius: 50%; background: #6b6b76; flex: none; }
+.g-hud-dot.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.g-hud-kind { font-size: 11px; font-weight: 700; color: #fff; letter-spacing: 0.01em; }
+@media (max-width: 380px) { .g-hud { width: 88px; } .g-hud-cam { width: 88px; } }
+
+.laughcard-hero { display: grid; justify-items: start; gap: 4px; }
+.laughcard-num {
+  font-size: 88px; font-weight: 900; letter-spacing: -0.07em; line-height: 0.9;
+  color: var(--accent); text-shadow: 0 0 40px rgba(200,255,61,0.25);
+}
+.laughcard .btn { margin-top: 14px; }
+@media (max-width: 420px) { .laughcard-num { font-size: 72px; } }

@@ -9,7 +9,7 @@
 // Browsers differ in how reliably a live camera <video> can be handed to the tracker directly
 // (some give it black frames, especially when the video is not on the page); a canvas copy works
 // everywhere, and it lets a sideways camera picture be turned upright first.
-import { headAngles } from "./gestures.js";
+import { headAngles, blendScores } from "./gestures.js";
 import { tongueFeatures } from "./tongue.js";
 
 const MODEL = "/mediapipe/face_landmarker.task";
@@ -62,7 +62,7 @@ export async function listCameras() {
  *   onFrame(canvas)  the upright frame just analysed, for a preview
  * Returns a function that stops the camera.
  */
-export function startHeadTracker({ tongue = false, margin = 0.005, deviceId = "", onReading, onStatus, onFrame }) {
+export function startHeadTracker({ tongue = false, faces = false, margin = 0.005, deviceId = "", onReading, onStatus, onFrame }) {
   let stopped = false, stream = null, timer = 0, status = "";
   const say = (s) => { if (!stopped && s !== status) { status = s; onStatus?.(s); } };
 
@@ -116,7 +116,7 @@ export function startHeadTracker({ tongue = false, margin = 0.005, deviceId = ""
     if (!navigator.mediaDevices?.getUserMedia) return say("nocamera");
     let tracker;
     try {
-      [stream, tracker] = await Promise.all([openCamera(deviceId), getTracker(tongue)]); // the tracker loads alongside the permission prompt
+      [stream, tracker] = await Promise.all([openCamera(deviceId), getTracker(tongue || faces)]); // the tracker loads alongside the permission prompt
     } catch (e) {
       stream?.getTracks().forEach((t) => t.stop());
       return say(e?.name === "NotAllowedError" || e?.name === "SecurityError" ? "denied" : e?.name === "NotFoundError" || e?.name === "OverconstrainedError" ? "nocamera" : "error");
@@ -158,10 +158,8 @@ export function startHeadTracker({ tongue = false, margin = 0.005, deviceId = ""
       else if (!sidewaysSince) sidewaysSince = t;
       else if (t - sidewaysSince > 700) { rot = (rot + 1) % ROTATIONS.length; sidewaysSince = 0; return onReading?.({ t, face: false }); }
       const reading = { t, face: true, ...headAngles(matrix) };
-      if (tongue) {
-        reading.jaw = res.faceBlendshapes?.[0]?.categories.find((c) => c.categoryName === "jawOpen")?.score || 0;
-        reading.run = tongueFeatures(pixelReader(lm), lm, margin).run;
-      }
+      if (tongue || faces) Object.assign(reading, blendScores(res.faceBlendshapes?.[0]?.categories));
+      if (tongue) reading.run = tongueFeatures(pixelReader(lm), lm, margin).run;
       onReading?.(reading);
     }, EVERY_MS);
   })().catch(() => say("error"));
