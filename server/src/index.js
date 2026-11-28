@@ -8,6 +8,7 @@ import { sourceStatus } from "./sources/index.js";
 import { warmupCatalog, backfillTikTokFiles } from "./ingest.js";
 import { cachePending } from "./media.js";
 import { loadPromotions } from "./promotions.js";
+import { db } from "./db.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -28,7 +29,7 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: "something broke on our side" });
 });
 
-app.listen(config.port, () => {
+const server = app.listen(config.port, () => {
   const ai = aiStatus();
   console.log(`axol server on http://localhost:${config.port}`);
   console.log(`  ai: ${ai.enabled ? `on (${ai.model})` : `off — heuristics (${ai.reason || "no credentials"})`}`);
@@ -43,3 +44,22 @@ app.listen(config.port, () => {
   // Promoted clips are scheduled from promotions.json on every boot, warm-up or not.
   loadPromotions().then((n) => n && console.log(`[promotions] ${n} scheduled`)).catch((e) => console.warn("[promotions]", e.message));
 });
+
+// Railway sends SIGTERM to the old container on every redeploy. Without a
+// handler Node dies from the signal, `npm start` fails with "signal SIGTERM",
+// and Railway reports the replaced deployment as crashed. Shut down cleanly.
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[shutdown] ${signal} received, closing`);
+  const done = () => {
+    try { db.close(); } catch {}
+    process.exit(0);
+  };
+  server.close(done);
+  server.closeIdleConnections?.();
+  setTimeout(done, 8000).unref();
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
